@@ -1,0 +1,56 @@
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 100 1000;
+  font-display: swap;
+  src: url('@fontsource-variable/dm-sans/files/dm-sans-latin-wght-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Manrope';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('@fontsource-variable/manrope/files/manrope-latin-wght-normal.woff2') format('woff2');
+}
+
+:root {
+  font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: #f3f3f4;
+  background: #101113;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  --bg: #101113;
+  --panel: #191a1e;
+  --raised: #222328;
+  --line: #2b2c31;
+  --muted: #a0a1ab;
+  --accent: #d0f58a;
+  --accent-ink: #202717;
+  --purple: #bba7ff;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; }
+button, input, select, textarea { font: inherit; }
+button, a, input, select, summary { -webkit-tap-highlight-color: transparent; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: .45; }
+button, a { touch-action: manipulation; }
+button { color: inherit; }
+a { color: inherit; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+input, select { min-width: 0; background: #141518; border: 1px solid #3b3c43; border-radius: 9px; padding: 11px 12px; color: #f3f3f4; }
+input[type="number"] { appearance: textfield; }
+input::-webkit-inner-spin-button { appearance: none; }
+input[type="checkbox"] { accent-color: var(--accent); width: 17px; height: 17px; flex-shrink: 0; }
+h1, h2, h3, h4, p { margin: 0; }
+h1, h2, h3, h4 { font-family: 'Manrope', 'DM Sans', sans-serif; }
+svg { flex-shrink: 0; }
+::selection { background: #d0f58a; color: #151710; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
