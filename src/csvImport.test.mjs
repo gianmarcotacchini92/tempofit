@@ -27,8 +27,8 @@ test('imports Hevy CSV sessions, preserves RPE as conservative RIR and skips war
   assert.equal(session.logs[0].rir, 1)
   assert.equal(session.logs[1].rir, 1.5)
   assert.equal(session.logs[1].weight, 13)
-  assert.equal(session.startedAt, '2026-09-08T09:09:00.000Z')
-  assert.equal(session.finishedAt, '2026-09-08T11:07:00.000Z')
+  assert.equal(session.startedAt, new Date(2026, 8, 8, 11, 9).toISOString())
+  assert.equal(session.finishedAt, new Date(2026, 8, 8, 13, 7).toISOString())
 })
 
 test('rejects malformed or non-importable CSV without producing partial app data', () => {
