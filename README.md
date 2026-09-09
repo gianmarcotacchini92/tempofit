@@ -97,6 +97,11 @@ modificare le impostazioni di sicurezza del sistema.
   caricabili per quel gruppo (es. bicipiti), si mantiene lavoro controllato
   e si esplicita il limite, senza spostare il blocco forza su un altro muscolo.
 - Esportazione/importazione JSON e cancellazione dei soli dati TempoFit.
+- Importazione diretta di CSV Hevy: le sedute vengono raggruppate per data,
+  le serie di riscaldamento vengono escluse dal lavoro registrato, RPE viene
+  convertito in una stima RIR conservativa e gli esercizi vengono associati
+  solo a mapping espliciti del catalogo. Le varianti non riconosciute sono
+  elencate nel messaggio d'importazione e non vengono assegnate arbitrariamente.
 
 ## Dati e limiti del prototipo
 
@@ -116,7 +121,7 @@ con i dati dell'utente.
 Il salvataggio e specifico del browser e dell'origine: `localhost` e `127.0.0.1`,
 cosi come porte differenti, hanno archivi separati. Cancellare i dati del sito
 elimina anche lo storico. Esportare periodicamente un backup dal profilo.
-L'importazione richiede un archivio vuoto per evitare sovrascritture.
+L'importazione JSON o CSV richiede un archivio vuoto per evitare sovrascritture.
 Modifiche rilevate da un'altra scheda bloccano le nuove scritture finche non si
 ricarica la pagina. Dati corrotti non vengono sovrascritti automaticamente.
 

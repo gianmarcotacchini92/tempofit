@@ -5,6 +5,7 @@ import { ActiveWorkout, WorkoutEditor } from './Workout'
 import { Dashboard, ExerciseDetail, ExerciseLibrary, History, NoWorkout, Progress } from './Screens'
 import { Modal } from './components'
 import { decodeData, downloadData, emptyData, loadData, MIGRATION_NOTICE, STORAGE_KEY } from './storage'
+import { importWorkoutCsv } from './csvImport'
 import { validatePlan } from './domain'
 import type { Exercise, SetLog, WorkoutPlan, WorkoutSettings } from './domain'
 import './App.css'
@@ -127,10 +128,21 @@ function App() {
   async function importData(file: File) {
     if (file.size > 10 * 1024 * 1024) { setToast('Il file supera il limite di 10 MB.'); return }
     try {
-      const parsed: unknown = JSON.parse(await file.text())
-      const decoded = decodeData(parsed)
-      if (!decoded) { setToast('Backup non compatibile. Nessun dato e stato modificato.'); return }
       if (data.active || data.history.length > 0 || data.draft) { setToast('Per proteggere i tuoi dati, importa in un archivio vuoto. Esporta prima il backup, poi usa Ripristina.'); return }
+      const content = await file.text()
+      const csv = file.name.toLocaleLowerCase('it').endsWith('.csv') || file.type === 'text/csv'
+      if (csv) {
+        const imported = importWorkoutCsv(content)
+        if (imported.error || !imported.data) { setToast(imported.error ?? 'Nessuna seduta importabile.'); return }
+        setData(imported.data)
+        setStorageError(null)
+        setDialog(null)
+        navigate('history')
+        setToast(`Importate ${imported.importedSessions} sedute e ${imported.importedSets} serie.${imported.skippedRows ? ` Ignorate ${imported.skippedRows} righe di riscaldamento o non leggibili.` : ''}${imported.skippedExercises.length ? ` Esercizi non riconosciuti: ${imported.skippedExercises.slice(0, 3).join(', ')}${imported.skippedExercises.length > 3 ? '…' : ''}.` : ''}`)
+        return
+      }
+      const decoded = decodeData(JSON.parse(content))
+      if (!decoded) { setToast('Backup non compatibile. Nessun dato e stato modificato.'); return }
       setData(decoded.data)
       setStorageError(null)
       setDialog(null)
@@ -180,8 +192,8 @@ function App() {
     {dialog === 'settings' && <Modal title="Il tuo spazio personale." subtitle="Senza account. Senza dati inviati a un server." onClose={() => setDialog(null)}>
       <div className="settings-content"><div className="quiet-note"><HardDrive size={22} /><p>I dati sono salvati in questo browser e a questo indirizzo. Cambiare browser, porta o cancellare i dati del sito li rende inaccessibili. Conserva un backup.</p></div>
         <button className="settings-action" onClick={() => { downloadData(JSON.stringify(data, null, 2), 'tempofit-backup.json'); setToast('Backup esportato.') }}><Download size={21} /><span><strong>Esporta il tuo backup</strong><small>Profilo, piani, sessione attiva e storico in JSON</small></span><ChevronRight size={18} /></button>
-        <button className="settings-action" onClick={() => importInput.current?.click()}><Upload size={21} /><span><strong>Importa un backup</strong><small>Disponibile solo con archivio vuoto, per evitare sovrascritture</small></span><ChevronRight size={18} /></button>
-        <input className="sr-only" type="file" ref={importInput} accept=".json,application/json" aria-label="File backup JSON" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importData(file); event.target.value = '' }} />
+        <button className="settings-action" onClick={() => importInput.current?.click()}><Upload size={21} /><span><strong>Importa backup o CSV</strong><small>JSON TempoFit o CSV Hevy, disponibile solo con archivio vuoto</small></span><ChevronRight size={18} /></button>
+        <input className="sr-only" type="file" ref={importInput} accept=".json,.csv,application/json,text/csv" aria-label="Backup JSON o CSV allenamenti" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importData(file); event.target.value = '' }} />
         <div className="settings-divider" /><button className="button danger ghost full" onClick={() => setDialog('reset')}>Ripristina i dati locali</button>
       </div></Modal>}
     {dialog === 'help' && <Modal title="Un piano. Non una corsa." onClose={() => setDialog(null)}><div className="help-content">
