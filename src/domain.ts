@@ -1,3 +1,5 @@
+import { csvExerciseVariants } from './csvExercises.ts'
+
 export type Muscle = 'chest' | 'back' | 'shoulders' | 'legs' | 'biceps' | 'triceps' | 'core'
 export type Equipment = 'gym' | 'dumbbells' | 'bodyweight'
 export type Goal = 'strength' | 'hypertrophy' | 'mixed'
@@ -49,6 +51,7 @@ export interface Exercise {
   secondsPerRep: number
   unilateral: boolean
   bodyweight?: boolean
+  historyOnly?: boolean
 }
 
 const ALL: Equipment[] = ['gym', 'dumbbells', 'bodyweight']
@@ -57,7 +60,7 @@ const GYM: Equipment[] = ['gym']
 
 // Equipment lists describe complete available profiles, not individual pieces of kit.
 // Ramp time includes practice sets AND their recovery; setup is equipment preparation only.
-export const EXERCISES: Exercise[] = [
+const PLANNING_EXERCISES: Exercise[] = [
   {
     id: 'barbell-bench', name: 'Panca piana con bilanciere', muscles: ['chest'],
     secondary: ['shoulders', 'triceps'], equipment: [...GYM], pattern: 'horizontal_push', stimulus: 'flat_press',
@@ -330,6 +333,8 @@ export const EXERCISES: Exercise[] = [
   },
 ]
 
+export const EXERCISES: Exercise[] = [...PLANNING_EXERCISES, ...csvExerciseVariants(PLANNING_EXERCISES)]
+
 export interface WorkoutSettings {
   minutes: number
   muscles: Muscle[]
@@ -360,6 +365,7 @@ export interface PlanExercise {
   rir: number
   targetLoad: number | null
   progressionNote?: string
+  sourceExerciseName?: string
 }
 export interface WorkoutPlan {
   id: string
@@ -378,6 +384,7 @@ export interface SetLog {
   reps: number
   rir: number | null
   completedAt: string
+  sourceSetIndex?: number
 }
 export interface WorkoutSession {
   id: string
@@ -385,6 +392,15 @@ export interface WorkoutSession {
   startedAt: string
   finishedAt: string | null
   logs: SetLog[]
+  importSource?: { format: 'hevy-csv'; mappingVersion: 2; key: string }
+}
+
+export function needsCsvRepair(session: WorkoutSession): boolean {
+  return typeof session.id === 'string' && session.id.startsWith('imported-session-') && session.importSource === undefined
+}
+
+export function setNumber(log: SetLog): number {
+  return (log.sourceSetIndex ?? log.setIndex) + 1
 }
 
 const WARMUP_SECONDS = 300
@@ -507,7 +523,7 @@ export function estimatePlanSeconds(plan: WorkoutPlan): number {
 }
 
 function allowed(exercise: Exercise, settings: WorkoutSettings): boolean {
-  return exercise.equipment.includes(settings.equipment)
+  return !exercise.historyOnly && exercise.equipment.includes(settings.equipment)
     && !settings.avoidedIds.includes(exercise.id)
     && !settings.avoidedPatterns.includes(exercise.pattern)
 }
@@ -635,6 +651,7 @@ function exposuresFor(exerciseId: string, history: WorkoutSession[]): Exposure[]
   for (const session of history) {
     if (!session || !nonempty(session.id) || seen.has(session.id)
       || !session.plan || !Array.isArray(session.plan.exercises) || !Array.isArray(session.logs)) continue
+    if (needsCsvRepair(session)) continue
     const date = session.finishedAt ?? session.startedAt
     if (!validDate(date)) continue
     const matches = session.plan.exercises.filter((item) => item && item.exerciseId === exerciseId)
@@ -745,7 +762,7 @@ function prescription(
 function recentPenalties(history: WorkoutSession[]): Map<string, number> {
   const penalties = new Map<string, number>()
   if (!Array.isArray(history)) return penalties
-  const sessions = history.filter((session) => session && validDate(session.finishedAt)
+  const sessions = history.filter((session) => session && !needsCsvRepair(session) && validDate(session.finishedAt)
     && session.plan && Array.isArray(session.plan.exercises) && Array.isArray(session.logs))
     .sort((a, b) => Date.parse(b.finishedAt!) - Date.parse(a.finishedAt!)).slice(0, 3)
   sessions.forEach((session, index) => {
@@ -951,7 +968,7 @@ function focusAnchor(candidates: Candidate[], settings: WorkoutSettings, history
   const eligible = candidates.filter((entry) => entry.mask & 1)
   const preferred = eligible.filter((entry) => settings.preferredIds.includes(entry.exercise.id))
   const ids = new Set((preferred.length ? preferred : eligible).map((entry) => entry.exercise.id))
-  const sessions = history.filter((session) => session && validDate(session.finishedAt)
+  const sessions = history.filter((session) => session && !needsCsvRepair(session) && validDate(session.finishedAt)
     && session.plan && Array.isArray(session.plan.exercises) && Array.isArray(session.logs))
     .sort((a, b) => Date.parse(b.finishedAt!) - Date.parse(a.finishedAt!))
   for (const session of sessions) {

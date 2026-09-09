@@ -1,6 +1,8 @@
 import { DEFAULT_SETTINGS, getExercise, minimumRestSeconds } from './domain.ts'
 import type { Muscle, PlanExercise, SetLog, WorkoutPlan, WorkoutSession } from './domain.ts'
 import type { AppData } from './storage.ts'
+import { isAppData } from './storage.ts'
+import { CSV_EXERCISE_MAP } from './csvExercises.ts'
 
 type CsvRow = Record<string, string>
 
@@ -18,80 +20,6 @@ const MONTHS: Record<string, number> = {
   gen: 0, gennaio: 0, feb: 1, febbraio: 1, mar: 2, marzo: 2, apr: 3, aprile: 3,
   mag: 4, maggio: 4, giu: 5, giugno: 5, lug: 6, luglio: 6, ago: 7, agosto: 7,
   set: 8, settembre: 8, ott: 9, ottobre: 9, nov: 10, novembre: 10, dic: 11, dicembre: 11,
-}
-
-// The export comes from Hevy and contains more variants than the TempoFit catalog.
-// Mappings stay explicit so an unknown movement is reported instead of guessed.
-const EXERCISE_MAP: Record<string, string> = {
-  'Bench Press (Barbell)': 'barbell-bench',
-  'Bench Press (Dumbbell)': 'db-flat-bench-press',
-  'Chest Press (Machine)': 'barbell-bench',
-  'Iso-Lateral Chest Press': 'barbell-bench',
-  'Iso-Lateral Chest Press (Machine)': 'barbell-bench',
-  'Decline Bench Press (Machine)': 'barbell-bench',
-  'Incline Bench Press (Barbell)': 'db-incline-press',
-  'Incline Bench Press (Dumbbell)': 'db-incline-press',
-  'Chest Fly (Dumbbell)': 'db-floor-fly',
-  'Chest Fly (Machine)': 'cable-fly',
-  'Cable Fly Crossovers': 'cable-fly',
-  'Chest Dip': 'chest-dip',
-  'Push Up': 'push-up',
-  'Pull Up': 'pull-up',
-  'Pull Up (Band)': 'pull-up',
-  'Lat Pulldown (Cable)': 'lat-pulldown',
-  'Lat Pulldown (Machine)': 'lat-pulldown',
-  'Lat Pulldown - Close Grip (Cable)': 'close-grip-lat-pulldown',
-  'Single Arm Lat Pulldown': 'lat-pulldown',
-  'T Bar Row': 'barbell-row',
-  'Landmine Row': 'barbell-row',
-  'Dumbbell Row': 'db-row',
-  'Seated Cable Row - Bar Grip': 'cable-row',
-  'Seated Cable Row - Bar Wide Grip': 'cable-row',
-  'Seated Cable Row - V Grip (Cable)': 'cable-row',
-  'Seated Row (Machine)': 'cable-row',
-  'Iso-Lateral Row (Machine)': 'cable-row',
-  'Iso-Lateral Low Row': 'cable-row',
-  'Straight Arm Lat Pulldown (Cable)': 'cable-straight-arm-pulldown',
-  'Rope Straight Arm Pulldown': 'cable-straight-arm-pulldown',
-  'Squat (Barbell)': 'barbell-squat',
-  'Hack Squat (Machine)': 'leg-press',
-  'Leg Press (Machine)': 'leg-press',
-  'Single Leg Press (Machine)': 'leg-press',
-  'Bulgarian Split Squat (Dumbbell)': 'db-reverse-lunge',
-  'Lunge (Dumbbell)': 'db-reverse-lunge',
-  'Curtsy Lunge (Dumbbell)': 'db-reverse-lunge',
-  'Romanian Deadlift (Barbell)': 'barbell-rdl',
-  'Romanian Deadlift (Dumbbell)': 'db-rdl',
-  'Lying Leg Curl (Machine)': 'seated-leg-curl',
-  'Seated Leg Curl (Machine)': 'seated-leg-curl',
-  'Standing Leg Curls': 'seated-leg-curl',
-  'Leg Extension (Machine)': 'leg-extension',
-  'Single Leg Extensions': 'leg-extension',
-  'Wall Sit': 'bodyweight-squat',
-  'Overhead Press (Barbell)': 'barbell-overhead-press',
-  'Shoulder Press (Dumbbell)': 'db-overhead-press',
-  'Arnold Press (Dumbbell)': 'db-overhead-press',
-  'Seated Lateral Raise (Dumbbell)': 'db-lateral-raise',
-  'Lateral Raise (Dumbbell)': 'db-lateral-raise',
-  'Single Arm Lateral Raise (Cable)': 'db-lateral-raise',
-  'Reverse Fly Single Arm (Cable)': 'db-reverse-fly',
-  'Rear Delt Reverse Fly (Dumbbell)': 'db-reverse-fly',
-  'Face Pull': 'db-reverse-fly',
-  'EZ Bar Biceps Curl': 'db-curl',
-  'Bicep Curl (Dumbbell)': 'db-curl',
-  'Seated Incline Curl (Dumbbell)': 'db-curl',
-  'Concentration Curl': 'db-curl',
-  'Behind the Back Curl (Cable)': 'db-curl',
-  'Preacher Curl (Dumbbell)': 'db-preacher-curl',
-  'Spider Curl (Dumbbell)': 'db-preacher-curl',
-  'Hammer Curl (Dumbbell)': 'db-hammer-curl',
-  'Triceps Rope Pushdown': 'cable-triceps',
-  'Triceps Kickback (Cable)': 'cable-triceps',
-  'Overhead Triceps Extension (Cable)': 'db-triceps-extension',
-  'Skullcrusher (Dumbbell)': 'db-triceps-extension',
-  'Single Arm Tricep Extension (Dumbbell)': 'db-triceps-extension',
-  'Cable Crunch': 'reverse-crunch',
-  'Decline Crunch (Weighted)': 'reverse-crunch',
 }
 
 const MUSCLE_WORDS: Array<[RegExp, Muscle]> = [
@@ -117,6 +45,7 @@ function parseCsv(text: string): CsvRow[] {
     else if (character === '\n') { row.push(cell); rows.push(row); row = []; cell = '' }
     else if (character !== '\r') cell += character
   }
+  if (quoted) return []
   if (cell || row.length) { row.push(cell); rows.push(row) }
   const headers = rows.shift()?.map((header) => header.trim()) ?? []
   return rows.filter((values) => values.some(Boolean)).map((values) =>
@@ -134,7 +63,8 @@ function parseDate(value: string): string | null {
   const month = MONTHS[match[2]!.toLocaleLowerCase('it')]
   if (month === undefined) return null
   const date = new Date(Number(match[3]), month, Number(match[1]), Number(match[4]), Number(match[5]))
-  return Number.isNaN(date.getTime()) ? null : date.toISOString()
+  return date.getFullYear() !== Number(match[3]) || date.getMonth() !== month || date.getDate() !== Number(match[1])
+    || date.getHours() !== Number(match[4]) || date.getMinutes() !== Number(match[5]) ? null : date.toISOString()
 }
 
 function focusMuscles(title: string, exerciseIds: string[]): Muscle[] {
@@ -151,8 +81,22 @@ function safeName(value: string): string {
   return value.trim() || 'Allenamento importato'
 }
 
-function createPlan(name: string, startedAt: string, settingsMuscles: Muscle[], entries: Array<{ id: string; rows: CsvRow[] }>): WorkoutPlan {
-  const exercises: PlanExercise[] = entries.map(({ id, rows: sourceRows }) => {
+function createPlan(sessionId: string, name: string, startedAt: string, settingsMuscles: Muscle[], entries: Array<{ id: string; name: string; rows: CsvRow[] }>): { plan: WorkoutPlan; logs: SetLog[] } {
+  const logs: SetLog[] = []
+  // Split long entries to respect the plan-item limit without discarding source sets.
+  const exercises: PlanExercise[] = entries.flatMap(({ id, name: sourceName, rows }, entryIndex) => Array.from({ length: Math.ceil(rows.length / 12) }, (_, chunk) => {
+    const sourceRows = rows.slice(chunk * 12, (chunk + 1) * 12)
+    const entryId = `imported-exercise-${entryIndex}-${chunk}`
+    sourceRows.forEach((row, setIndex) => {
+      const rpe = parseNumber(row.rpe)
+      const sourceSetIndex = parseNumber(row.set_index ?? '')
+      logs.push({
+        id: `${sessionId}-${entryId}-${setIndex}`, planExerciseId: entryId, setIndex,
+        sourceSetIndex: sourceSetIndex !== null && Number.isInteger(sourceSetIndex) && sourceSetIndex >= 0 ? sourceSetIndex : chunk * 12 + setIndex,
+        weight: parseNumber(row.weight_kg), reps: parseNumber(row.reps)!,
+        rir: rpe === null ? null : 10 - rpe, completedAt: startedAt,
+      })
+    })
     const reps = sourceRows.map((row) => parseNumber(row.reps)).filter((value): value is number => value !== null && Number.isInteger(value) && value > 0)
     const loads = sourceRows.map((row) => parseNumber(row.weight_kg)).filter((value): value is number => value !== null && value >= 0)
     const rirs = sourceRows.map((row) => {
@@ -166,13 +110,13 @@ function createPlan(name: string, startedAt: string, settingsMuscles: Muscle[], 
       restSeconds: 90, rir: rirs.length ? Math.min(...rirs) : 2, targetLoad: null,
     }), 60)
     return {
-      id: `imported-exercise-${id}`, exerciseId: id, sets: Math.min(12, sourceRows.length),
+      id: entryId, exerciseId: id, sourceExerciseName: sourceName, sets: sourceRows.length,
       repMin, repMax, restSeconds, rir: rirs.length ? Math.round((rirs.reduce((sum, value) => sum + value, 0) / rirs.length) * 2) / 2 : 2,
       targetLoad: loads.length ? loads[loads.length - 1]! : null,
     }
-  })
-  return {
-    id: `imported-plan-${startedAt}`,
+  }))
+  const plan: WorkoutPlan = {
+    id: `plan-${sessionId}`,
     name: safeName(name),
     createdAt: startedAt,
     settings: {
@@ -181,6 +125,7 @@ function createPlan(name: string, startedAt: string, settingsMuscles: Muscle[], 
     },
     exercises, warmupSeconds: 300, reserveSeconds: 90,
   }
+  return { plan, logs }
 }
 
 export function importWorkoutCsv(text: string): CsvImportResult {
@@ -203,46 +148,38 @@ export function importWorkoutCsv(text: string): CsvImportResult {
     const [title, startValue, endValue] = key.split('\u0000')
     const startedAt = parseDate(startValue ?? '')
     const endedAt = parseDate(endValue ?? '')
-    if (!startedAt || !endedAt) { skippedRows += group.length; continue }
+    if (!startedAt || !endedAt || Date.parse(endedAt) < Date.parse(startedAt)) { skippedRows += group.length; continue }
     const byExercise = new Map<string, CsvRow[]>()
     for (const row of group) {
       if (row.set_type === 'warmup') { skippedRows += 1; continue }
-      const mapped = EXERCISE_MAP[row.exercise_title]
+      const mapped = Object.hasOwn(CSV_EXERCISE_MAP, row.exercise_title) ? CSV_EXERCISE_MAP[row.exercise_title] : undefined
       const reps = parseNumber(row.reps)
-      if (!mapped || !reps || !Number.isInteger(reps) || reps < 1) {
+      const weight = parseNumber(row.weight_kg)
+      const rpe = parseNumber(row.rpe)
+      if (!mapped || !reps || !Number.isInteger(reps) || reps < 1
+        || (row.weight_kg.trim() !== '' && (weight === null || weight < 0))
+        || (row.rpe.trim() !== '' && (rpe === null || rpe < 0 || rpe > 10))) {
         if (row.exercise_title) skippedExercises.add(row.exercise_title)
         skippedRows += 1
         continue
       }
-      const exerciseRows = byExercise.get(mapped) ?? []
+      const exerciseRows = byExercise.get(row.exercise_title) ?? []
       exerciseRows.push(row)
-      byExercise.set(mapped, exerciseRows)
+      byExercise.set(row.exercise_title, exerciseRows)
     }
     if (!byExercise.size) continue
-    const exerciseIds = [...byExercise.keys()]
+    const entries = [...byExercise].map(([name, rows]) => ({ id: CSV_EXERCISE_MAP[name], name, rows }))
+    const exerciseIds = entries.map((entry) => entry.id)
     const muscles = focusMuscles(title ?? '', exerciseIds)
-    const plan = createPlan(title ?? '', startedAt, muscles, exerciseIds.map((id) => ({ id, rows: byExercise.get(id)! })))
-    const logs: SetLog[] = []
-    for (const item of plan.exercises) {
-      const sourceRows = byExercise.get(item.exerciseId)!
-      sourceRows.slice(0, item.sets).forEach((row, setIndex) => {
-        const rpe = parseNumber(row.rpe)
-        logs.push({
-          id: `imported-log-${startedAt}-${item.id}-${setIndex}`,
-          planExerciseId: item.id, setIndex,
-          weight: parseNumber(row.weight_kg),
-          reps: Number(row.reps),
-          rir: rpe === null ? null : Math.max(0, Math.min(10, 10 - rpe)),
-          completedAt: startedAt,
-        })
-      })
-    }
-    sessions.push({ id: `imported-session-${startedAt}`, plan, startedAt, finishedAt: endedAt, logs })
+    const sessionId = `hevy-session-${encodeURIComponent(key)}`
+    const { plan, logs } = createPlan(sessionId, title ?? '', startedAt, muscles, entries)
+    sessions.push({ id: sessionId, plan, startedAt, finishedAt: endedAt, logs, importSource: { format: 'hevy-csv', mappingVersion: 2, key } })
   }
   if (!sessions.length) {
     return { data: null, importedSessions: 0, importedSets: 0, skippedSessions: groups.size, skippedExercises: [...skippedExercises], skippedRows, error: 'Nessuna seduta importabile: non sono state riconosciute serie allenanti con date valide.' }
   }
   const importedSets = sessions.reduce((sum, session) => sum + session.logs.length, 0)
   const data: AppData = { version: 2, settings: structuredClone(DEFAULT_SETTINGS), draft: null, active: null, history: sessions, restEndsAt: null }
+  if (!isAppData(data)) return { data: null, importedSessions: 0, importedSets: 0, skippedSessions: groups.size, skippedExercises: [...skippedExercises], skippedRows, error: 'Il CSV supera i limiti del modello storico. Nessun dato e stato importato.' }
   return { data, importedSessions: sessions.length, importedSets, skippedSessions: groups.size - sessions.length, skippedExercises: [...skippedExercises], skippedRows, error: null }
 }

@@ -58,13 +58,16 @@ function plan(value: unknown): value is WorkoutPlan {
       && Number.isInteger(item.sets) && finite(item.sets) && item.sets > 0 && item.sets <= 12
       && finite(item.repMin) && finite(item.repMax) && finite(item.restSeconds)
       && finite(item.rir) && nullableNumber(item.targetLoad) && (item.targetLoad === null || (finite(item.targetLoad) && item.targetLoad >= 0))
-      && (item.progressionNote === undefined || typeof item.progressionNote === 'string'))
+      && (item.progressionNote === undefined || typeof item.progressionNote === 'string')
+      && (item.sourceExerciseName === undefined || typeof item.sourceExerciseName === 'string'))
 }
 
 function session(value: unknown): value is WorkoutSession {
   if (!record(value) || typeof value.id !== 'string' || !plan(value.plan)
     || !date(value.startedAt) || !(value.finishedAt === null || date(value.finishedAt))
     || !Array.isArray(value.logs)) return false
+  if (value.importSource !== undefined && (!record(value.importSource) || value.importSource.format !== 'hevy-csv'
+    || value.importSource.mappingVersion !== 2 || typeof value.importSource.key !== 'string')) return false
   if (value.plan.exercises.length === 0 || new Set(value.plan.exercises.map((item) => item.id)).size !== value.plan.exercises.length) return false
   const exerciseIds = new Map(value.plan.exercises.map((item) => [item.id, item.sets]))
   const seen = new Set<string>()
@@ -76,6 +79,7 @@ function session(value: unknown): value is WorkoutSession {
       || !finite(item.reps) || !Number.isInteger(item.reps) || item.reps < 1
       || !nullableNumber(item.rir) || (finite(item.rir) && (item.rir < 0 || item.rir > 10))
       || !date(item.completedAt)) return false
+    if (item.sourceSetIndex !== undefined && (!finite(item.sourceSetIndex) || !Number.isInteger(item.sourceSetIndex) || item.sourceSetIndex < 0)) return false
     const key = `${item.planExerciseId}:${item.setIndex}`
     if (seen.has(key)) return false
     seen.add(key)

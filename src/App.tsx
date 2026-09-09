@@ -5,8 +5,11 @@ import { ActiveWorkout, WorkoutEditor } from './Workout'
 import { Dashboard, ExerciseDetail, ExerciseLibrary, History, NoWorkout, Progress } from './Screens'
 import { Modal } from './components'
 import { decodeData, downloadData, emptyData, loadData, MIGRATION_NOTICE, STORAGE_KEY } from './storage'
+import type { AppData } from './storage'
 import { importWorkoutCsv } from './csvImport'
-import { validatePlan } from './domain'
+import { repairCsvHistory } from './csvRepair'
+import type { CsvRepairResult } from './csvRepair'
+import { needsCsvRepair, validatePlan } from './domain'
 import type { Exercise, SetLog, WorkoutPlan, WorkoutSettings } from './domain'
 import './App.css'
 
@@ -27,6 +30,7 @@ function App() {
   const [view, setView] = useState<View>(initial.data.active ? 'workout' : 'home')
   const [config, setConfig] = useState<WorkoutSettings | null>(null)
   const [dialog, setDialog] = useState<Dialog>(null)
+  const [pendingRepair, setPendingRepair] = useState<{ base: AppData; result: Extract<CsvRepairResult, { error: null }>; backedUp: boolean } | null>(null)
   const [inspecting, setInspecting] = useState<Exercise | null>(null)
   const [toast, setToast] = useState(initial.notice ?? '')
   const [menuOpen, setMenuOpen] = useState(false)
@@ -34,6 +38,7 @@ function App() {
   const importInput = useRef<HTMLInputElement>(null)
   const main = useRef<HTMLElement>(null)
   const activeSessionId = data.active?.id
+  const legacyCsvCount = data.history.filter(needsCsvRepair).length
 
   useEffect(() => {
     if (storageError) return
@@ -128,12 +133,20 @@ function App() {
   async function importData(file: File) {
     if (file.size > 10 * 1024 * 1024) { setToast('Il file supera il limite di 10 MB.'); return }
     try {
-      if (data.active || data.history.length > 0 || data.draft) { setToast('Per proteggere i tuoi dati, importa in un archivio vuoto. Esporta prima il backup, poi usa Ripristina.'); return }
-      const content = await file.text()
       const csv = file.name.toLocaleLowerCase('it').endsWith('.csv') || file.type === 'text/csv'
+      if ((data.active || data.history.length > 0 || data.draft) && !(csv && legacyCsvCount > 0)) { setToast('Per proteggere i tuoi dati, importa in un archivio vuoto. Esporta prima il backup, poi usa Ripristina.'); return }
+      if (csv && legacyCsvCount > 0 && storageError) { setToast('Risolvi il blocco di salvataggio prima di correggere lo storico.'); return }
+      const content = await file.text()
       if (csv) {
         const imported = importWorkoutCsv(content)
         if (imported.error || !imported.data) { setToast(imported.error ?? 'Nessuna seduta importabile.'); return }
+        if (legacyCsvCount > 0) {
+          const result = repairCsvHistory(data, imported.data.history)
+          if (result.error !== null) { setToast(result.error); return }
+          setPendingRepair({ base: data, result, backedUp: false })
+          setDialog(null)
+          return
+        }
         setData(imported.data)
         setStorageError(null)
         setDialog(null)
@@ -172,6 +185,7 @@ function App() {
     <div className="app-content">
       <header className="topbar"><div className="breadcrumb"><button className="icon-button menu-toggle" aria-label="Apri menu" onClick={() => setMenuOpen(true)}><Menu size={21} /></button><span className="breadcrumb-root">Il mio spazio</span><ChevronRight size={13} /><strong>{currentLabel}</strong></div><div className="topbar-actions"><span className="local-indicator"><span className={storageError ? 'status-error' : ''} />{storageError ? 'Salvataggio bloccato' : 'Solo sul tuo dispositivo'}</span><button className="avatar small" aria-label="Impostazioni e backup" onClick={() => setDialog('settings')}>TU</button></div></header>
       <main id="main" ref={main} tabIndex={-1}>
+        {legacyCsvCount > 0 && <div className="alert storage-alert" role="alert"><p>{legacyCsvCount} sedute provengono dal vecchio import CSV, che accorpava varianti diverse. Non vengono usate nei grafici per esercizio o nei suggerimenti di carico finche non le correggi dal file originale. Se hai un piano gia generato, ricontrolla i carichi prima di iniziare.</p><button className="button secondary compact" onClick={() => setDialog('settings')}>Correggi associazioni CSV</button></div>}
         {storageError && <div className="alert storage-alert" role="alert"><p>{storageError}</p><div><button className="button secondary compact" onClick={() => downloadData(JSON.stringify(data, null, 2), 'tempofit-dati-correnti.json')}>Esporta dati correnti</button><button className="button secondary compact" onClick={exportRaw}>Esporta originale</button><button className="button secondary compact" onClick={() => window.location.reload()}>Ricarica</button><button className="button ghost compact" onClick={() => setDialog('reset')}>Ripristina</button></div></div>}
         {view === 'home' && <Dashboard history={data.history} active={data.active} onCreate={configure} onHistory={() => navigate('history')} onResume={() => navigate('workout')} />}
         {view === 'workout' && (data.active ? <ActiveWorkout session={data.active} now={now} restEndsAt={data.restEndsAt} onLog={logSet}
@@ -192,10 +206,27 @@ function App() {
     {dialog === 'settings' && <Modal title="Il tuo spazio personale." subtitle="Senza account. Senza dati inviati a un server." onClose={() => setDialog(null)}>
       <div className="settings-content"><div className="quiet-note"><HardDrive size={22} /><p>I dati sono salvati in questo browser e a questo indirizzo. Cambiare browser, porta o cancellare i dati del sito li rende inaccessibili. Conserva un backup.</p></div>
         <button className="settings-action" onClick={() => { downloadData(JSON.stringify(data, null, 2), 'tempofit-backup.json'); setToast('Backup esportato.') }}><Download size={21} /><span><strong>Esporta il tuo backup</strong><small>Profilo, piani, sessione attiva e storico in JSON</small></span><ChevronRight size={18} /></button>
-        <button className="settings-action" onClick={() => importInput.current?.click()}><Upload size={21} /><span><strong>Importa backup o CSV</strong><small>JSON TempoFit o CSV Hevy, disponibile solo con archivio vuoto</small></span><ChevronRight size={18} /></button>
+        <button className="settings-action" onClick={() => importInput.current?.click()}><Upload size={21} /><span><strong>{legacyCsvCount > 0 ? 'Correggi storico dal CSV originale' : 'Importa backup o CSV'}</strong><small>{legacyCsvCount > 0 ? 'Ripara solo le vecchie sedute corrispondenti. Non serve cancellare lo storico.' : 'JSON TempoFit o CSV Hevy, disponibile solo con archivio vuoto'}</small></span><ChevronRight size={18} /></button>
         <input className="sr-only" type="file" ref={importInput} accept=".json,.csv,application/json,text/csv" aria-label="Backup JSON o CSV allenamenti" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importData(file); event.target.value = '' }} />
         <div className="settings-divider" /><button className="button danger ghost full" onClick={() => setDialog('reset')}>Ripristina i dati locali</button>
       </div></Modal>}
+    {pendingRepair && <Modal title="Correggi le associazioni CSV." onClose={() => setPendingRepair(null)}>
+      <p className="dialog-copy">Il CSV ricostruira {pendingRepair.result.correctedSessions} sedute importate e {pendingRepair.result.restoredSets} serie, separando gli esercizi originali. I dati di queste sedute saranno riletti dal file. Le sessioni registrate in TempoFit, le impostazioni, il piano e la sessione in corso restano invariati: ricontrolla i carichi dei piani gia generati.</p>
+      {pendingRepair.result.remainingSessions > 0 && <p className="dialog-copy">{pendingRepair.result.remainingSessions} vecchie sedute non sono presenti nel file: restano conservate e da correggere. Le sedute nuove del CSV non vengono aggiunte da questa operazione.</p>}
+      <p className="dialog-copy">Esporta prima una copia dello storico attuale. Nessuna modifica viene applicata finche non confermi.</p>
+      <button className="button secondary full" onClick={() => {
+        downloadData(JSON.stringify(pendingRepair.base, null, 2), 'tempofit-prima-correzione-csv.json')
+        setPendingRepair((old) => old ? { ...old, backedUp: true } : null)
+      }}><Download size={18} /> Esporta backup prima della correzione</button>
+      <div className="modal-actions"><button className="button secondary" onClick={() => setPendingRepair(null)}>Annulla</button>
+        <button className="button primary" disabled={!pendingRepair.backedUp || Boolean(storageError)} onClick={() => {
+          if (storageError || data !== pendingRepair.base) { setToast('I dati sono cambiati. Ricarica il CSV prima di confermare.'); setPendingRepair(null); return }
+          setData(pendingRepair.result.data)
+          setToast(`Corrette ${pendingRepair.result.correctedSessions} sedute. Le varianti ora hanno storico e progressi separati.`)
+          setPendingRepair(null)
+          navigate('history')
+        }}>Applica correzione</button></div>
+    </Modal>}
     {dialog === 'help' && <Modal title="Un piano. Non una corsa." onClose={() => setDialog(null)}><div className="help-content">
       <h3>01 / Scegli il tempo reale</h3><p>Il generatore include riscaldamento, avvicinamento, recuperi, transizioni e un margine operativo. La durata rimane una stima.</p>
       <h3>02 / Personalizza prima di iniziare</h3><p>Seleziona muscoli, attrezzatura, esperienza e obiettivo. Preferenze ed esclusioni sono nella configurazione avanzata. Puoi modificare o sostituire ogni esercizio del piano.</p>

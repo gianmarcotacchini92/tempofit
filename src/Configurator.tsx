@@ -86,7 +86,7 @@ export function Configurator({ initial, history, onClose, onGenerate }: {
             <label className="checkbox-label" key={key}><input type="checkbox" checked={settings.avoidedPatterns.includes(key)}
               onChange={() => toggleList('avoidedPatterns', key)} />{label}</label>)}</div>
           <div className="preference-header"><h4>Esercizio</h4><span>Preferito</span><span>Escluso</span></div>
-          <div className="preference-list">{EXERCISES.filter((item) => item.equipment.includes(settings.equipment)).map((exercise) =>
+          <div className="preference-list">{EXERCISES.filter((item) => !item.historyOnly && item.equipment.includes(settings.equipment)).map((exercise) =>
             <div className="preference-row" key={exercise.id}><span>{exercise.name}</span>
               <input type="checkbox" aria-label={`Preferisci ${exercise.name}`} checked={settings.preferredIds.includes(exercise.id)} onChange={() => toggleList('preferredIds', exercise.id)} />
               <input type="checkbox" aria-label={`Escludi ${exercise.name}`} checked={settings.avoidedIds.includes(exercise.id)} onChange={() => toggleList('avoidedIds', exercise.id)} />

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ArrowRight, ArrowUpRight, CalendarDays, ChartNoAxesCombined, Check, ChevronRight, Clock3, Dumbbell, Flame, MoveUpRight, Plus, Search, Sparkles, Target, TrendingUp, Zap } from 'lucide-react'
-import { EXERCISES, EQUIPMENT_LABELS, GOAL_LABELS, MUSCLE_LABELS, getExercise } from './domain'
+import { EXERCISES, EQUIPMENT_LABELS, GOAL_LABELS, MUSCLE_LABELS, getExercise, needsCsvRepair, setNumber } from './domain'
 import type { Equipment, Exercise, Muscle, WorkoutSession, WorkoutSettings } from './domain'
 import { ExerciseArtwork, HeroArtwork } from './components'
 import { dateLabel, timeLabel } from './format'
@@ -96,7 +96,7 @@ export function History({ history, onCreate }: { history: WorkoutSession[]; onCr
           <div className="history-title"><span className="eyebrow">{GOAL_LABELS[session.plan.settings.goal]}</span><h3>{session.plan.name}</h3><p>{dateLabel(session.startedAt)} / {sessionMinutes(session)} min / {session.logs.length} serie {session.logs.length < sets && <span className="partial-badge">Parziale</span>}</p></div><ChevronRight className="history-chevron" size={20} /></summary>
           <div className="history-details">{session.plan.exercises.map((item) => {
             const logs = session.logs.filter((log) => log.planExerciseId === item.id).sort((a, b) => a.setIndex - b.setIndex)
-            return <div className="history-exercise" key={item.id}><h4>{getExercise(item.exerciseId).name}</h4>{logs.length ? logs.map((log) => <p key={log.id}><span>Serie {log.setIndex + 1}</span><strong>{log.weight === null ? 'Carico non registrato' : `${log.weight} kg`} / {log.reps} rip.</strong><span>{log.rir === null ? 'RIR --' : `RIR ${log.rir}`}</span></p>) : <p className="muted">Non eseguito</p>}</div>
+            return <div className="history-exercise" key={item.id}><h4>{needsCsvRepair(session) ? 'Associazione da correggere: ' : ''}{getExercise(item.exerciseId).name}</h4>{item.sourceExerciseName && <p className="muted">Nome nel CSV: {item.sourceExerciseName}</p>}{logs.length ? logs.map((log) => <p key={log.id}><span>Serie {setNumber(log)}</span><strong>{log.weight === null ? 'Carico non registrato' : `${log.weight} kg`} / {log.reps} rip.</strong><span>{log.rir === null ? 'RIR --' : `RIR ${log.rir}`}</span></p>) : <p className="muted">Non eseguito</p>}</div>
           })}</div>
         </details>
       })}</div>}
@@ -104,7 +104,8 @@ export function History({ history, onCreate }: { history: WorkoutSession[]; onCr
 }
 
 export function Progress({ history }: { history: WorkoutSession[] }) {
-  const muscleSets = (Object.keys(MUSCLE_LABELS) as Muscle[]).map((muscle) => ({ muscle, sets: history.reduce((sum, session) =>
+  const trustedHistory = history.filter((session) => !needsCsvRepair(session))
+  const muscleSets = (Object.keys(MUSCLE_LABELS) as Muscle[]).map((muscle) => ({ muscle, sets: trustedHistory.reduce((sum, session) =>
     sum + session.logs.filter((log) => {
       const item = session.plan.exercises.find((exercise) => exercise.id === log.planExerciseId)
       return item ? getExercise(item.exerciseId).muscles.includes(muscle) : false
@@ -114,7 +115,7 @@ export function Progress({ history }: { history: WorkoutSession[] }) {
     <div className="stat-grid"><Metric icon={<Dumbbell size={20} />} label="Sessioni salvate" value={String(history.length)} detail="incluse le parziali" color="green" />
       <Metric icon={<Target size={20} />} label="Serie registrate" value={String(history.reduce((sum, session) => sum + session.logs.length, 0))} detail="solo lavoro completato" color="purple" />
       <Metric icon={<Clock3 size={20} />} label="Tempo totale" value={String(history.reduce((sum, session) => sum + sessionMinutes(session), 0))} unit="min" detail="dedicati a te" color="peach" /></div>
-    <div className="progress-grid"><ProgressChart history={history} /><section className="panel distribution-panel"><div className="section-heading"><div><h3>Dove hai messo energia</h3><p>Serie per muscolo principale / tutto lo storico</p></div></div>
+    <div className="progress-grid"><ProgressChart history={history} /><section className="panel distribution-panel"><div className="section-heading"><div><h3>Dove hai messo energia</h3><p>Serie per muscolo principale / {trustedHistory.length < history.length ? 'escluse le associazioni CSV da correggere' : 'tutto lo storico'}</p></div></div>
       <div className="muscle-bars">{muscleSets.map(({ muscle, sets }) => <div key={muscle}><div><span>{MUSCLE_LABELS[muscle]}</span><strong>{sets}</strong></div><div className="distribution-track"><span style={{ width: `${sets / maxSets * 100}%` }} /></div></div>)}</div>
       <p className="field-help">Il coinvolgimento secondario non viene contato. Una serie puo coinvolgere piu muscoli principali.</p>
     </section></div>

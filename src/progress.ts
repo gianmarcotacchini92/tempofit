@@ -1,4 +1,4 @@
-import { getExercise, isBodyweightExercise } from './domain.ts'
+import { getExercise, isBodyweightExercise, needsCsvRepair } from './domain.ts'
 import type { Exercise, SetLog, WorkoutSession } from './domain.ts'
 
 export const PROGRESS_RANGES = [
@@ -45,7 +45,7 @@ export function estimatedOneRepMax(exercise: Exercise, log: Pick<SetLog, 'weight
 export function progressPoints(history: WorkoutSession[], exerciseId: string, range: ProgressRange, metric: ProgressMetric, now = new Date()): ProgressPoint[] {
   const start = progressStart(range, now)
   const exercise = getExercise(exerciseId)
-  return history.filter((session) => session.finishedAt !== null && Date.parse(session.startedAt) >= start && Date.parse(session.startedAt) <= now.getTime())
+  return history.filter((session) => !needsCsvRepair(session) && session.finishedAt !== null && Date.parse(session.startedAt) >= start && Date.parse(session.startedAt) <= now.getTime())
     .sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt))
     .flatMap((session) => {
       const points = session.plan.exercises.filter((item) => item.exerciseId === exerciseId).flatMap((item) =>

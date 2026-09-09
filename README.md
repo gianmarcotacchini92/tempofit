@@ -116,9 +116,23 @@ modificare le impostazioni di sicurezza del sistema.
 - Esportazione/importazione JSON e cancellazione dei soli dati TempoFit.
 - Importazione diretta di CSV Hevy: le sedute vengono raggruppate per data,
   le serie di riscaldamento vengono escluse dal lavoro registrato, RPE viene
-  convertito in una stima RIR conservativa e gli esercizi vengono associati
-  solo a mapping espliciti del catalogo. Le varianti non riconosciute sono
-  elencate nel messaggio d'importazione e non vengono assegnate arbitrariamente.
+  convertito in una stima RIR conservativa. Le identita degli esercizi sono
+  esatte: macchine, bilancieri, inclinazioni, prese e varianti unilaterali
+  non condividono carichi o grafici. Nome originale, indice della serie e
+  provenienza del CSV restano nel backup. Nessuna serie viene tagliata per
+  accorpare esercizi diversi. Attivita non supportate (anche Wall Sit) sono
+  segnalate, mai convertite in un altro movimento.
+- Le varianti aggiunte per riconoscere gli export sono disponibili nello
+  storico, nei progressi e nella libreria; non ampliano automaticamente il
+  catalogo usato dal generatore. Le istruzioni indicano questa distinzione.
+- Correzione degli import precedenti: dal profilo scegliere **Correggi storico
+  dal CSV originale**, selezionare lo stesso file, esportare il backup e
+  confermare l'anteprima. Si sostituiscono solo le vecchie sedute CSV con
+  titolo, inizio e fine corrispondenti, senza aggiungerne di nuove o toccare
+  sessioni native, impostazioni, piano e sessione in corso. Corrispondenze
+  ambigue sono bloccate; sedute mancanti nel file rimangono da correggere.
+  Il vecchio import aveva perso i nomi originali: non e possibile recuperare
+  la variante corretta senza il CSV, ne tramite una semplice rinomina.
 
 ## Dati e limiti del prototipo
 
@@ -138,7 +152,11 @@ con i dati dell'utente.
 Il salvataggio e specifico del browser e dell'origine: `localhost` e `127.0.0.1`,
 cosi come porte differenti, hanno archivi separati. Cancellare i dati del sito
 elimina anche lo storico. Esportare periodicamente un backup dal profilo.
-L'importazione JSON o CSV richiede un archivio vuoto per evitare sovrascritture.
+L'importazione JSON o CSV richiede un archivio vuoto per evitare sovrascritture,
+eccetto la procedura guidata di correzione dei vecchi import CSV. Fino alla
+correzione queste sedute restano esportabili e consultabili con un avviso,
+ma non alimentano grafici per esercizio, distribuzione muscolare o suggerimenti
+di carico. I piani gia generati restano invariati: ricontrollarne i carichi.
 Modifiche rilevate da un'altra scheda bloccano le nuove scritture finche non si
 ricarica la pagina. Dati corrotti non vengono sovrascritti automaticamente.
 

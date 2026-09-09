@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { ChartNoAxesCombined, TrendingUp } from 'lucide-react'
-import { EXERCISES, getExercise, isBodyweightExercise } from './domain'
+import { EXERCISES, getExercise, isBodyweightExercise, needsCsvRepair, setNumber } from './domain'
 import type { WorkoutSession } from './domain'
 import { dateLabel } from './format'
 import { PROGRESS_METRICS, PROGRESS_RANGES, progressPoints } from './progress'
@@ -31,7 +31,7 @@ function InteractiveChart({ points, metric, exerciseName }: { points: ProgressPo
   const y = (value: number) => bottom - value / max * (bottom - top)
   const active = activeIndex === null ? null : points[activeIndex]
   const ticks = [...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1])]
-  const announce = (point: ProgressPoint) => `${dateLabel(point.date)}, serie ${point.log.setIndex + 1}: ${formatMetric(point.value, metric)} ${option.unit}`
+  const announce = (point: ProgressPoint) => `${dateLabel(point.date)}, serie ${setNumber(point.log)}: ${formatMetric(point.value, metric)} ${option.unit}`
   function selectPoint(event: { currentTarget: SVGSVGElement; clientX: number }) {
     const rect = event.currentTarget.getBoundingClientRect()
     const position = (event.clientX - rect.left) * width / rect.width
@@ -80,7 +80,7 @@ function InteractiveChart({ points, metric, exerciseName }: { points: ProgressPo
     </div>
     <div className="chart-detail" id={detailId} role="status" aria-live="polite" aria-atomic="true">
       {active ? <>
-        <div className="chart-detail-heading"><div><strong>{dateLabel(active.date)} / Serie {active.log.setIndex + 1}</strong><span>{active.sessionName}</span></div>
+        <div className="chart-detail-heading"><div><strong>{dateLabel(active.date)} / Serie {setNumber(active.log)}</strong><span>{active.sessionName}</span></div>
           <strong className="chart-detail-value">{formatMetric(active.value, metric)} <small>{option.unit}{metric === 'oneRepMax' ? ' stimati' : ''}</small></strong></div>
         <dl className="chart-set-values"><div><dt>Peso utilizzato</dt><dd>{format(active.log.weight!)} kg</dd></div>
           <div><dt>Ripetizioni</dt><dd>{active.log.reps}</dd></div><div><dt>Volume serie</dt><dd>{format(active.log.weight! * active.log.reps)} kg × rip.</dd></div>
@@ -99,7 +99,7 @@ export function ProgressChart({ history }: { history: WorkoutSession[] }) {
   const [selected, setSelected] = useState('')
   const [range, setRange] = useState<ProgressRange>('3m')
   const [metric, setMetric] = useState<ProgressMetric>('weight')
-  const tracked = EXERCISES.filter((exercise) => history.some((session) => session.plan.exercises.some((item) => item.exerciseId === exercise.id && session.logs.some((log) => log.planExerciseId === item.id && log.weight !== null))))
+  const tracked = EXERCISES.filter((exercise) => history.some((session) => !needsCsvRepair(session) && session.plan.exercises.some((item) => item.exerciseId === exercise.id && session.logs.some((log) => log.planExerciseId === item.id && log.weight !== null))))
   const exerciseId = tracked.some((exercise) => exercise.id === selected) ? selected : tracked[0]?.id
   const exercise = exerciseId ? getExercise(exerciseId) : null
   const points = exerciseId ? progressPoints(history, exerciseId, range, metric) : []
