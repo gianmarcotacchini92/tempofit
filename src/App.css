@@ -223,6 +223,29 @@ summary::-webkit-details-marker { display: none; }
 .exercise-art.art-purple { color: #c3b3ed; background: #292436; border-color: #66528755; }
 .exercise-art.art-peach { color: #e2b48a; background: #31271f; border-color: #70563c66; }
 .exercise-art.art-small { width: 44px; height: 44px; border-radius: 9px; }
+.exercise-art.has-illustration { background: #fff; border-color: #d1d5cf; }
+.exercise-art.has-illustration::before { content: none; }
+.exercise-art.has-illustration img { width: 100%; height: 100%; object-fit: contain; padding: 3px; }
+.media-inverted { filter: invert(1); }
+.exercise-image-button { border: 0; background: transparent; padding: 0; border-radius: 12px; flex-shrink: 0; }
+.exercise-image-button:hover { box-shadow: 0 0 0 2px var(--accent); }
+.exercise-illustration { margin: 0 0 20px; }
+.media-frame { background: #fff; border-radius: 12px; overflow: hidden; border: 1px solid #d1d5cf; }
+.media-frame > img { display: block; width: 100%; height: min(48vh, 380px); min-height: 220px; object-fit: contain; padding: 12px; }
+.media-positions { display: flex; gap: 10px; margin-top: 12px; }
+.media-positions .chip { flex: 1; min-height: 44px; }
+.exercise-illustration figcaption { color: var(--muted); font-size: 11px; line-height: 1.7; margin-top: 12px; }
+.media-credits { margin-top: 8px; }
+.media-credits summary { cursor: pointer; padding-block: 6px; }
+.media-credits p { margin: 8px 0; overflow-wrap: anywhere; }
+.media-credits a { text-decoration: underline; text-underline-offset: 3px; }
+.media-unavailable { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 28px 18px; text-align: center; border-radius: 12px; background: var(--panel); color: var(--muted); font-size: 12px; line-height: 1.8; }
+.media-unavailable strong { color: #f3f3f4; }
+.media-unavailable > p { margin: 0; }
+.chart-exercise-preview { display: flex; align-items: center; gap: 12px; border: 0; padding: 12px 0 0; background: transparent; text-align: left; color: var(--accent); font-size: 12px; }
+.history-exercise-heading { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.history-exercise-heading h4 { margin: 0; }
+.page-footer a { display: inline-block; margin-left: 8px; text-underline-offset: 3px; }
 .exercise-card-title { flex: 1; min-width: 0; }
 .exercise-card-title h3 { font-size: 16px; font-weight: 600; letter-spacing: -.3px; margin-top: 4px; }
 .exercise-card-title .eyebrow { font-size: 8px; }

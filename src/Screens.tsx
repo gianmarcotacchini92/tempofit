@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { ArrowRight, ArrowUpRight, CalendarDays, ChartNoAxesCombined, Check, ChevronRight, Clock3, Dumbbell, Flame, MoveUpRight, Plus, Search, Sparkles, Target, TrendingUp, Zap } from 'lucide-react'
 import { EXERCISES, EQUIPMENT_LABELS, GOAL_LABELS, MUSCLE_LABELS, getExercise, needsCsvRepair, setNumber } from './domain'
 import type { Equipment, Exercise, Muscle, WorkoutSession, WorkoutSettings } from './domain'
-import { ExerciseArtwork, HeroArtwork } from './components'
+import { ExerciseArtwork, ExerciseIllustration, HeroArtwork } from './components'
 import { dateLabel, timeLabel } from './format'
 import { ProgressChart } from './ProgressChart'
 
@@ -55,7 +55,7 @@ export function Dashboard({ history, active, onCreate, onHistory, onResume }: {
         <div className="principle-strip"><span className="principle-icon"><Target size={21} /></span><div><strong>Meno improvvisazione. Piu intenzione.</strong><p>Recuperi e riscaldamento sono parte del piano, non tempo perso.</p></div><span className="mini-label">IL METODO TEMPOFIT</span></div>
       </section>
       <section className="panel recent-panel"><div className="section-heading compact-heading"><h3>Ultime sessioni</h3><button className="icon-button" aria-label="Apri storico" onClick={onHistory}><ArrowUpRight size={19} /></button></div>
-        {recent.length ? <div className="recent-list">{recent.map((session) => <button key={session.id} className="recent-item" onClick={onHistory}><ExerciseArtwork small pattern={getExercise(session.plan.exercises[0].exerciseId).pattern} /><span><strong>{session.plan.name}</strong><small>{dateLabel(session.startedAt, { day: 'numeric', month: 'short' })} / {session.logs.length} serie</small></span><ChevronRight size={17} /></button>)}</div>
+        {recent.length ? <div className="recent-list">{recent.map((session) => <button key={session.id} className="recent-item" onClick={onHistory}><ExerciseArtwork small exercise={needsCsvRepair(session) ? undefined : getExercise(session.plan.exercises[0].exerciseId)} /><span><strong>{session.plan.name}</strong><small>{dateLabel(session.startedAt, { day: 'numeric', month: 'short' })} / {session.logs.length} serie</small></span><ChevronRight size={17} /></button>)}</div>
           : <div className="recent-empty"><span className="empty-icon"><TrendingUp size={26} strokeWidth={1.5} /></span><h4>La tua storia inizia qui.</h4><p>Completa il primo allenamento.<br />Ogni sessione trovera il suo posto.</p><button className="text-button" onClick={() => active ? onResume() : onCreate()}>{active ? 'Riprendi sessione' : 'Iniziamo'}<ArrowRight size={15} /></button></div>}
       </section>
     </div>
@@ -82,12 +82,12 @@ export function ExerciseLibrary({ equipment, onInspect }: { equipment: Equipment
     <div className="library-filters"><button className={`chip ${muscle === 'all' ? 'selected' : ''}`} onClick={() => setMuscle('all')} aria-pressed={muscle === 'all'}>Tutti</button>
       {(Object.entries(MUSCLE_LABELS) as [Muscle, string][]).map(([key, name]) => <button key={key} className={`chip ${muscle === key ? 'selected' : ''}`} onClick={() => setMuscle(key)} aria-pressed={muscle === key}>{name}</button>)}</div>
     <div className="library-grid">{exercises.map((exercise) => <button className="panel library-card" key={exercise.id} onClick={() => onInspect(exercise)}>
-      <ExerciseArtwork pattern={exercise.pattern} /><span className="library-card-copy"><strong>{exercise.name}</strong><small>{exercise.muscles.map((item) => MUSCLE_LABELS[item]).join(' / ')}</small><span className="library-type">{exercise.category === 'compound' ? 'Multiarticolare' : 'Mirato'} {exercise.unilateral && '/ Unilaterale'}</span></span><ArrowUpRight size={17} /></button>)}</div>
+      <ExerciseArtwork exercise={exercise} /><span className="library-card-copy"><strong>{exercise.name}</strong><small>{exercise.muscles.map((item) => MUSCLE_LABELS[item]).join(' / ')}</small><span className="library-type">{exercise.category === 'compound' ? 'Multiarticolare' : 'Mirato'} {exercise.unilateral && '/ Unilaterale'}</span></span><ArrowUpRight size={17} /></button>)}</div>
     {exercises.length === 0 && <div className="panel empty-state"><Search size={30} /><h3>Nessun esercizio trovato.</h3><p>Prova un altro nome o modifica i filtri.</p></div>}
   </>
 }
 
-export function History({ history, onCreate }: { history: WorkoutSession[]; onCreate: () => void }) {
+export function History({ history, onCreate, onInspect }: { history: WorkoutSession[]; onCreate: () => void; onInspect: (exercise: Exercise) => void }) {
   return <><div className="page-heading"><div><span className="eyebrow">IL LAVORO RESTA</span><h1>Il tuo percorso<span className="accent">.</span></h1><p>Sessioni reali. Anche quelle piu brevi del previsto.</p></div><button className="button primary compact" onClick={onCreate}><Plus size={18} /> Nuovo workout</button></div>
     {history.length === 0 ? <div className="panel empty-state"><CalendarDays size={36} strokeWidth={1.5} /><h2>Il primo capitolo e da scrivere.</h2><p>Qui ritroverai serie, ripetizioni e carichi di ogni allenamento salvato.</p><button className="button primary" onClick={onCreate}>Crea il primo allenamento <ArrowRight size={17} /></button></div>
       : <div className="history-list">{history.slice().sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt)).map((session) => {
@@ -96,14 +96,16 @@ export function History({ history, onCreate }: { history: WorkoutSession[]; onCr
           <div className="history-title"><span className="eyebrow">{GOAL_LABELS[session.plan.settings.goal]}</span><h3>{session.plan.name}</h3><p>{dateLabel(session.startedAt)} / {sessionMinutes(session)} min / {session.logs.length} serie {session.logs.length < sets && <span className="partial-badge">Parziale</span>}</p></div><ChevronRight className="history-chevron" size={20} /></summary>
           <div className="history-details">{session.plan.exercises.map((item) => {
             const logs = session.logs.filter((log) => log.planExerciseId === item.id).sort((a, b) => a.setIndex - b.setIndex)
-            return <div className="history-exercise" key={item.id}><h4>{needsCsvRepair(session) ? 'Associazione da correggere: ' : ''}{getExercise(item.exerciseId).name}</h4>{item.sourceExerciseName && <p className="muted">Nome nel CSV: {item.sourceExerciseName}</p>}{logs.length ? logs.map((log) => <p key={log.id}><span>Serie {setNumber(log)}</span><strong>{log.weight === null ? 'Carico non registrato' : `${log.weight} kg`} / {log.reps} rip.</strong><span>{log.rir === null ? 'RIR --' : `RIR ${log.rir}`}</span></p>) : <p className="muted">Non eseguito</p>}</div>
+            const exercise = getExercise(item.exerciseId)
+            const unverified = needsCsvRepair(session)
+            return <div className="history-exercise" key={item.id}><div className="history-exercise-heading"><button className="exercise-image-button" aria-label={`Mostra illustrazione di ${exercise.name}`} disabled={unverified} onClick={() => onInspect(exercise)}><ExerciseArtwork small exercise={unverified ? undefined : exercise} /></button><h4>{unverified ? 'Associazione da correggere: ' : ''}{exercise.name}</h4></div>{item.sourceExerciseName && <p className="muted">Nome nel CSV: {item.sourceExerciseName}</p>}{logs.length ? logs.map((log) => <p key={log.id}><span>Serie {setNumber(log)}</span><strong>{log.weight === null ? 'Carico non registrato' : `${log.weight} kg`} / {log.reps} rip.</strong><span>{log.rir === null ? 'RIR --' : `RIR ${log.rir}`}</span></p>) : <p className="muted">Non eseguito</p>}</div>
           })}</div>
         </details>
       })}</div>}
   </>
 }
 
-export function Progress({ history }: { history: WorkoutSession[] }) {
+export function Progress({ history, onInspect }: { history: WorkoutSession[]; onInspect: (exercise: Exercise) => void }) {
   const trustedHistory = history.filter((session) => !needsCsvRepair(session))
   const muscleSets = (Object.keys(MUSCLE_LABELS) as Muscle[]).map((muscle) => ({ muscle, sets: trustedHistory.reduce((sum, session) =>
     sum + session.logs.filter((log) => {
@@ -115,7 +117,7 @@ export function Progress({ history }: { history: WorkoutSession[] }) {
     <div className="stat-grid"><Metric icon={<Dumbbell size={20} />} label="Sessioni salvate" value={String(history.length)} detail="incluse le parziali" color="green" />
       <Metric icon={<Target size={20} />} label="Serie registrate" value={String(history.reduce((sum, session) => sum + session.logs.length, 0))} detail="solo lavoro completato" color="purple" />
       <Metric icon={<Clock3 size={20} />} label="Tempo totale" value={String(history.reduce((sum, session) => sum + sessionMinutes(session), 0))} unit="min" detail="dedicati a te" color="peach" /></div>
-    <div className="progress-grid"><ProgressChart history={history} /><section className="panel distribution-panel"><div className="section-heading"><div><h3>Dove hai messo energia</h3><p>Serie per muscolo principale / {trustedHistory.length < history.length ? 'escluse le associazioni CSV da correggere' : 'tutto lo storico'}</p></div></div>
+    <div className="progress-grid"><ProgressChart history={history} onInspect={onInspect} /><section className="panel distribution-panel"><div className="section-heading"><div><h3>Dove hai messo energia</h3><p>Serie per muscolo principale / {trustedHistory.length < history.length ? 'escluse le associazioni CSV da correggere' : 'tutto lo storico'}</p></div></div>
       <div className="muscle-bars">{muscleSets.map(({ muscle, sets }) => <div key={muscle}><div><span>{MUSCLE_LABELS[muscle]}</span><strong>{sets}</strong></div><div className="distribution-track"><span style={{ width: `${sets / maxSets * 100}%` }} /></div></div>)}</div>
       <p className="field-help">Il coinvolgimento secondario non viene contato. Una serie puo coinvolgere piu muscoli principali.</p>
     </section></div>
@@ -127,7 +129,7 @@ export function NoWorkout({ onCreate }: { onCreate: () => void }) {
 }
 
 export function ExerciseDetail({ exercise }: { exercise: Exercise }) {
-  return <div className="exercise-detail"><ExerciseArtwork pattern={exercise.pattern} /><div className="tag-list">{exercise.muscles.map((muscle) => <span className="tag" key={muscle}>{MUSCLE_LABELS[muscle]}</span>)}</div>
+  return <div className="exercise-detail"><ExerciseIllustration key={exercise.id} exercise={exercise} /><div className="tag-list">{exercise.muscles.map((muscle) => <span className="tag" key={muscle}>{MUSCLE_LABELS[muscle]}</span>)}</div>
     <h4>Il movimento</h4><p>{exercise.instructions}</p><h4>Prima di iniziare</h4><p>Prepara l'attrezzatura e avvicinati gradualmente al carico di lavoro. Non scegliere il peso in base al solo livello dichiarato.</p>
     <dl className="summary-list"><div><dt>Tipo</dt><dd>{exercise.category === 'compound' ? 'Multiarticolare' : 'Mirato'}</dd></div><div><dt>Esecuzione</dt><dd>{exercise.unilateral ? 'Entrambi i lati, uno alla volta' : 'Bilaterale / centrale'}</dd></div><div><dt>Preparazione stimata</dt><dd>{timeLabel(exercise.setupSeconds + exercise.rampSeconds)}</dd></div></dl>
     <div className="quiet-note"><span>Interrompi in caso di dolore. Queste indicazioni sintetiche non sostituiscono l'apprendimento della tecnica con un professionista.</span></div></div>

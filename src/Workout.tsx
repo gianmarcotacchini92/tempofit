@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { ArrowLeftRight, Check, ChevronDown, Clock3, Dumbbell, Info, Minus, Pencil, Play, Plus, ShieldCheck, SlidersHorizontal, Timer, Trash2 } from 'lucide-react'
 import { GOAL_LABELS, MAX_SETS, MUSCLE_LABELS, estimateExerciseSeconds, estimatePlanSeconds, getExercise, getSubstitutions, isBodyweightExercise, isFocusExercise, minimumRestSeconds, planBudgetNote, validatePlan } from './domain'
-import type { PlanExercise, SetLog, WorkoutPlan, WorkoutSession } from './domain'
+import type { Exercise, PlanExercise, SetLog, WorkoutPlan, WorkoutSession } from './domain'
 import { ExerciseArtwork, Modal } from './components'
 import { timeLabel } from './format'
 
-export function WorkoutEditor({ plan, onChange, onConfigure, onStart, blocked }: {
+export function WorkoutEditor({ plan, onChange, onConfigure, onStart, onInspect, blocked }: {
   plan: WorkoutPlan; onChange: (plan: WorkoutPlan) => void; onConfigure: () => void; onStart: () => void; blocked: boolean
+  onInspect: (exercise: Exercise) => void
 }) {
   const [editing, setEditing] = useState<PlanExercise | null>(null)
   const [replacing, setReplacing] = useState<PlanExercise | null>(null)
@@ -27,7 +28,7 @@ export function WorkoutEditor({ plan, onChange, onConfigure, onStart, blocked }:
       <div className="workout-list">{plan.exercises.map((item, index) => {
         const exercise = getExercise(item.exerciseId)
         return <article className="exercise-card" key={item.id}>
-          <div className="exercise-card-head"><ExerciseArtwork pattern={exercise.pattern} /><div className="exercise-card-title">
+          <div className="exercise-card-head"><button className="exercise-image-button" aria-label={`Mostra illustrazione di ${exercise.name}`} onClick={() => onInspect(exercise)}><ExerciseArtwork exercise={exercise} /></button><div className="exercise-card-title">
             <span className="eyebrow">{isFocusExercise(item, plan.settings) ? 'FOCUS' : exercise.muscles.some((muscle) => plan.settings.muscles.includes(muscle)) ? 'ESERCIZIO' : 'ACCESSORIO'} {String(index + 1).padStart(2, '0')}</span><h3>{exercise.name}</h3>
             <p>{exercise.muscles.map((muscle) => MUSCLE_LABELS[muscle]).join(' / ')}</p>
           </div><div className="exercise-tools"><button className="icon-button" aria-label={`Sostituisci ${exercise.name}`} onClick={() => setReplacing(item)}><ArrowLeftRight size={18} /></button>
@@ -75,7 +76,7 @@ export function WorkoutEditor({ plan, onChange, onConfigure, onStart, blocked }:
     {replacing && <Modal title="Un'alternativa, stesso intento." subtitle="Attrezzatura ed esclusioni sono gia considerate." onClose={() => setReplacing(null)}>
       <div className="substitution-list">{getSubstitutions(replacing, plan.settings, plan.exercises.map((item) => item.exerciseId)).map((exercise) =>
         <button className="substitution-option" key={exercise.id} onClick={() => { replace({ ...replacing, exerciseId: exercise.id, targetLoad: null }); setReplacing(null) }}>
-          <ExerciseArtwork small pattern={exercise.pattern} /><span><strong>{exercise.name}</strong><small>{exercise.muscles.map((muscle) => MUSCLE_LABELS[muscle]).join(' / ')}</small></span><ArrowLeftRight size={17} />
+          <ExerciseArtwork small exercise={exercise} /><span><strong>{exercise.name}</strong><small>{exercise.muscles.map((muscle) => MUSCLE_LABELS[muscle]).join(' / ')}</small></span><ArrowLeftRight size={17} />
         </button>)}
         {getSubstitutions(replacing, plan.settings, plan.exercises.map((item) => item.exerciseId)).length === 0 && <div className="empty-inline">Nessuna alternativa compatibile con questi vincoli. Puoi modificare la configurazione.</div>}
       </div>
@@ -113,9 +114,10 @@ function SetRow({ item, index, log, onLog, onUndo, blocked }: {
   </form>
 }
 
-export function ActiveWorkout({ session, now, restEndsAt, onLog, onUndo, onRest, onFinish, onDiscard, blocked }: {
+export function ActiveWorkout({ session, now, restEndsAt, onLog, onUndo, onRest, onFinish, onDiscard, onInspect, blocked }: {
   session: WorkoutSession; now: number; restEndsAt: number | null; onLog: (log: SetLog) => void; onUndo: (id: string) => void
   onRest: (end: number | null) => void; onFinish: () => void; onDiscard: () => void; blocked: boolean
+  onInspect: (exercise: Exercise) => void
 }) {
   const total = session.plan.exercises.reduce((sum, item) => sum + item.sets, 0)
   const remaining = restEndsAt === null ? 0 : Math.max(0, Math.ceil((restEndsAt - now) / 1000))
@@ -128,7 +130,7 @@ export function ActiveWorkout({ session, now, restEndsAt, onLog, onUndo, onRest,
     <div className="session-columns"><div className="workout-list">{session.plan.exercises.map((item) => {
       const exercise = getExercise(item.exerciseId)
       return <article className="exercise-card session-card" key={item.id}>
-        <div className="exercise-card-head"><ExerciseArtwork small pattern={exercise.pattern} /><div className="exercise-card-title">{isFocusExercise(item, session.plan.settings) && <span className="eyebrow">FOCUS</span>}<h3>{exercise.name}</h3>
+        <div className="exercise-card-head"><button className="exercise-image-button" aria-label={`Mostra illustrazione di ${exercise.name}`} onClick={() => onInspect(exercise)}><ExerciseArtwork small exercise={exercise} /></button><div className="exercise-card-title">{isFocusExercise(item, session.plan.settings) && <span className="eyebrow">FOCUS</span>}<h3>{exercise.name}</h3>
           <p>{item.repMin}-{item.repMax} rip. <span className="text-dot">/</span> RIR {item.rir} <span className="text-dot">/</span> Recupero {timeLabel(item.restSeconds)}</p></div></div>
         {item.progressionNote && <p className="progression-note">{item.progressionNote}</p>}
         <details className="exercise-instructions"><summary>Istruzioni e preparazione <ChevronDown size={14} /></summary><p>{exercise.instructions}</p><p>Prepara l'attrezzo e completa un avvicinamento progressivo: circa {timeLabel(exercise.rampSeconds)}, recuperi inclusi. Se serve piu tempo, prendilo.</p></details>

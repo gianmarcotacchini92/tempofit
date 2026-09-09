@@ -133,6 +133,35 @@ modificare le impostazioni di sicurezza del sistema.
   ambigue sono bloccate; sedute mancanti nel file rimangono da correggere.
   Il vecchio import aveva perso i nomi originali: non e possibile recuperare
   la variante corretta senza il CSV, ne tramite una semplice rinomina.
+- Illustrazioni didattiche con miniature e scheda ingrandita da libreria,
+  piano, sessione, storico e progressi. Quando sono disponibili due immagini
+  si possono alternare manualmente. Le associazioni visive sono esplicite
+  per variante: nessuna immagine viene ereditata da un esercizio simile e
+  le vecchie associazioni CSV da correggere non mostrano immagini fuorvianti.
+  Le varianti senza illustrazione e gli errori di caricamento sono segnalati.
+
+## Illustrazioni e licenze
+
+Le immagini provengono da [Everkinetic / Greg Priday](https://github.com/everkinetic/data)
+e da [Workout Guide / Bryl Lim](https://github.com/bryllim/workout-guide).
+Sono distribuite sotto **CC BY-SA 4.0**, con sorgente, autore, licenza e
+modifiche preesistenti indicati in ogni scheda e nel file pubblico
+`public\exercises\ATTRIBUTION.json`. La licenza degli asset non viene estesa
+implicitamente al codice dell'app. Non sono immagini di Hevy.
+
+Gli asset sono serviti dallo stesso sito: nessuna richiesta a un catalogo
+esterno durante l'uso e nessun invio dei dati di allenamento. I file originali
+sono copiati senza modifiche; solo le immagini bianche di Workout Guide
+vengono invertite via CSS per essere leggibili sul fondo chiaro. Le posizioni
+sono riferimenti per identificare l'esercizio, non animazioni o istruzioni
+tecniche complete.
+
+`src\exerciseMediaSources.ts` contiene le associazioni deliberate e i commit
+delle fonti. `npm.cmd run media:sync` scarica i file selezionati, la licenza
+e genera `src\exerciseMedia.generated.ts` e i crediti. Questo comando serve
+solo per aggiornare gli asset: build e deploy normali non dipendono dai
+cataloghi esterni. Non assegnare immagini a nuove varianti senza controllarne
+attrezzatura, posizione e contenuto effettivo.
 
 ## Dati e limiti del prototipo
 

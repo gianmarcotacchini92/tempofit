@@ -188,15 +188,15 @@ function App() {
         {legacyCsvCount > 0 && <div className="alert storage-alert" role="alert"><p>{legacyCsvCount} sedute provengono dal vecchio import CSV, che accorpava varianti diverse. Non vengono usate nei grafici per esercizio o nei suggerimenti di carico finche non le correggi dal file originale. Se hai un piano gia generato, ricontrolla i carichi prima di iniziare.</p><button className="button secondary compact" onClick={() => setDialog('settings')}>Correggi associazioni CSV</button></div>}
         {storageError && <div className="alert storage-alert" role="alert"><p>{storageError}</p><div><button className="button secondary compact" onClick={() => downloadData(JSON.stringify(data, null, 2), 'tempofit-dati-correnti.json')}>Esporta dati correnti</button><button className="button secondary compact" onClick={exportRaw}>Esporta originale</button><button className="button secondary compact" onClick={() => window.location.reload()}>Ricarica</button><button className="button ghost compact" onClick={() => setDialog('reset')}>Ripristina</button></div></div>}
         {view === 'home' && <Dashboard history={data.history} active={data.active} onCreate={configure} onHistory={() => navigate('history')} onResume={() => navigate('workout')} />}
-        {view === 'workout' && (data.active ? <ActiveWorkout session={data.active} now={now} restEndsAt={data.restEndsAt} onLog={logSet}
+        {view === 'workout' && (data.active ? <ActiveWorkout session={data.active} now={now} restEndsAt={data.restEndsAt} onLog={logSet} onInspect={setInspecting}
           onUndo={(id) => setData((old) => ({ ...old, active: old.active ? { ...old.active, logs: old.active.logs.filter((log) => log.id !== id) } : null, restEndsAt: null }))}
           onRest={(end) => { setNow(Date.now()); setData((old) => ({ ...old, restEndsAt: end })) }} onFinish={() => setDialog('finish')} onDiscard={() => setDialog('discard')} blocked={Boolean(storageError)} />
-          : data.draft ? <WorkoutEditor plan={data.draft} onChange={(plan) => setData((old) => ({ ...old, draft: plan }))} onConfigure={() => setConfig(data.draft!.settings)} onStart={startWorkout} blocked={Boolean(storageError)} />
+          : data.draft ? <WorkoutEditor plan={data.draft} onChange={(plan) => setData((old) => ({ ...old, draft: plan }))} onConfigure={() => setConfig(data.draft!.settings)} onStart={startWorkout} onInspect={setInspecting} blocked={Boolean(storageError)} />
             : <NoWorkout onCreate={configure} />)}
         {view === 'exercises' && <ExerciseLibrary equipment={data.settings.equipment} onInspect={setInspecting} />}
-        {view === 'history' && <History history={data.history} onCreate={configure} />}
-        {view === 'progress' && <Progress history={data.history} />}
-        <footer className="page-footer"><span>Fatto per il tuo ritmo.</span><span>TempoFit <span className="accent">/</span> Prototipo locale 0.1</span></footer>
+        {view === 'history' && <History history={data.history} onCreate={configure} onInspect={setInspecting} />}
+        {view === 'progress' && <Progress history={data.history} onInspect={setInspecting} />}
+        <footer className="page-footer"><span>Fatto per il tuo ritmo. <a href={`${import.meta.env.BASE_URL}exercises/ATTRIBUTION.json`} target="_blank" rel="noreferrer">Crediti illustrazioni</a></span><span>TempoFit <span className="accent">/</span> Prototipo locale 0.1</span></footer>
       </main>
     </div>
     <nav className="mobile-navigation" aria-label="Navigazione mobile">{navigation.map(({ id, label, icon: Icon }) => <button key={id} className={view === id ? 'active' : ''} aria-current={view === id ? 'page' : undefined} onClick={() => navigate(id)}><Icon size={20} /><span>{label}</span></button>)}</nav>

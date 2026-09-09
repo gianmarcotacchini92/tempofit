@@ -1,6 +1,8 @@
-import { useEffect, useRef } from 'react'
-import { Activity, Dumbbell, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Activity, Dumbbell, ImageOff, X } from 'lucide-react'
 import type { ReactNode } from 'react'
+import type { Exercise } from './domain'
+import { getExerciseMedia, mediaAssetUrl } from './exerciseMedia'
 
 export function Modal({ title, subtitle, children, onClose, wide = false }: {
   title: string; subtitle?: string; children: ReactNode; onClose: () => void; wide?: boolean
@@ -31,12 +33,44 @@ export function Modal({ title, subtitle, children, onClose, wide = false }: {
   </dialog>
 }
 
-export function ExerciseArtwork({ pattern = '', small = false }: { pattern?: string; small?: boolean }) {
+export function ExerciseArtwork({ exercise, pattern = '', small = false }: { exercise?: Exercise; pattern?: string; small?: boolean }) {
+  const [failed, setFailed] = useState<string | null>(null)
+  const media = exercise ? getExerciseMedia(exercise.id) : undefined
+  const frame = media?.frames[0]
+  if (frame && failed !== frame.file) return <div className={`exercise-art has-illustration ${small ? 'art-small' : ''}`} aria-hidden="true">
+    <img src={mediaAssetUrl(frame.file)} alt="" loading="lazy" decoding="async" width="96" height="96"
+      className={media?.invert ? 'media-inverted' : ''} onError={() => setFailed(frame.file)} />
+  </div>
+  if (exercise) return <div className={`exercise-art ${small ? 'art-small' : ''}`} aria-hidden="true" title={frame ? 'Illustrazione non caricata' : 'Illustrazione non disponibile per questa variante'}><ImageOff size={small ? 23 : 30} strokeWidth={1.4} /></div>
   const leg = /squat|hinge|leg|lunge|glute/.test(pattern)
   const core = /core|plank|rotation/.test(pattern)
   return <div className={`exercise-art ${leg ? 'art-purple' : core ? 'art-peach' : ''} ${small ? 'art-small' : ''}`} aria-hidden="true">
     {core ? <Activity size={small ? 23 : 36} strokeWidth={1.4} /> : <Dumbbell size={small ? 23 : 36} strokeWidth={1.4} style={{ transform: leg ? 'rotate(-35deg)' : 'rotate(-15deg)' }} />}
   </div>
+}
+
+export function ExerciseIllustration({ exercise }: { exercise: Exercise }) {
+  const [selected, setSelected] = useState(0)
+  const [failed, setFailed] = useState<string | null>(null)
+  const media = getExerciseMedia(exercise.id)
+  const frame = media?.frames[selected]
+  if (!media || !frame) return <div className="media-unavailable"><ImageOff size={32} /><strong>Illustrazione non disponibile per questa variante.</strong><p>Non mostriamo un esercizio simile al suo posto. Usa il nome originale e le indicazioni della scheda per identificarlo.</p></div>
+  return <figure className="exercise-illustration">
+    <div className="media-frame">
+      {failed === frame.file ? <div className="media-unavailable" role="alert"><ImageOff size={32} /><strong>Impossibile caricare l'illustrazione.</strong><p>Controlla la connessione e riprova.</p><button className="button secondary compact" onClick={() => setFailed(null)}>Riprova</button></div>
+        : <img src={mediaAssetUrl(frame.file)} alt={`Illustrazione di ${exercise.name}, immagine ${selected + 1}`} width="512" height="512"
+          className={media.invert ? 'media-inverted' : ''} onError={() => setFailed(frame.file)} />}
+    </div>
+    {media.frames.length > 1 && <div className="media-positions" role="group" aria-label="Immagini dell'esercizio">{media.frames.map((item, index) =>
+      <button key={item.file} className={`chip ${selected === index ? 'selected' : ''}`} aria-pressed={selected === index} onClick={() => setSelected(index)}>Immagine {index + 1}</button>)}</div>}
+    <figcaption><p>Riferimento visivo per riconoscere l'esercizio, non una dimostrazione completa della tecnica.</p>
+      <details className="media-credits"><summary>Fonte e licenza</summary>
+        <p><a href={frame.sourceUrl} target="_blank" rel="noreferrer">{media.title}</a> di <a href={frame.creatorUrl} target="_blank" rel="noreferrer">{frame.creator}</a>. <a href={frame.licenseUrl} target="_blank" rel="noreferrer">{frame.license}</a>.</p>
+        {frame.original && <p>Derivato da <a href={frame.original.url} target="_blank" rel="noreferrer">{frame.original.name}</a> ({frame.original.license}). {frame.original.changes}</p>}
+        <p>{frame.changes}</p>
+      </details>
+    </figcaption>
+  </figure>
 }
 
 export function HeroArtwork() {

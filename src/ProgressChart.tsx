@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { ChartNoAxesCombined, TrendingUp } from 'lucide-react'
 import { EXERCISES, getExercise, isBodyweightExercise, needsCsvRepair, setNumber } from './domain'
-import type { WorkoutSession } from './domain'
+import type { Exercise, WorkoutSession } from './domain'
+import { ExerciseArtwork } from './components'
 import { dateLabel } from './format'
 import { PROGRESS_METRICS, PROGRESS_RANGES, progressPoints } from './progress'
 import type { ProgressMetric, ProgressPoint, ProgressRange } from './progress'
@@ -95,7 +96,7 @@ function InteractiveChart({ points, metric, exerciseName }: { points: ProgressPo
   </div>
 }
 
-export function ProgressChart({ history }: { history: WorkoutSession[] }) {
+export function ProgressChart({ history, onInspect }: { history: WorkoutSession[]; onInspect: (exercise: Exercise) => void }) {
   const [selected, setSelected] = useState('')
   const [range, setRange] = useState<ProgressRange>('3m')
   const [metric, setMetric] = useState<ProgressMetric>('weight')
@@ -112,6 +113,7 @@ export function ProgressChart({ history }: { history: WorkoutSession[] }) {
       <button key={item.id} className={`chip ${range === item.id ? 'selected' : ''}`} aria-pressed={range === item.id} onClick={() => setRange(item.id)}>{item.label}</button>)}</div>
     {exercise ? <>
       <select className="full" aria-label="Esercizio del grafico" value={exercise.id} onChange={(event) => setSelected(event.target.value)}>{tracked.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+      <button className="chart-exercise-preview" onClick={() => onInspect(exercise)} aria-label={`Mostra illustrazione di ${exercise.name}`}><ExerciseArtwork small exercise={exercise} /><span>Vedi illustrazione dell'esercizio</span></button>
       {points.length ? <>
         <p className="field-help chart-summary">{new Set(points.map((point) => point.sessionId)).size} sessioni / {points.length} {metric === 'oneRepMax' ? 'stime' : metric === 'weight' ? 'carichi massimi' : 'serie'} / {range === 'max' ? 'tutto lo storico' : `ultimi ${PROGRESS_RANGES.find((item) => item.id === range)!.label}`}.<br />
           {metric === 'volume' ? 'Un punto per serie' : 'Un punto per sessione'}, in ordine cronologico; la distanza tra i punti non indica il tempo trascorso.</p>
