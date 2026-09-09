@@ -28,24 +28,43 @@ test('calendar ranges include the boundary day and clamp month ends and leap yea
   assert.equal(progressPoints(history, 'barbell-bench', 'max', 'weight', now).length, 5)
 })
 
-test('all recorded sets are chronological without a ten-session cap or source mutation', () => {
+test('session maxima and individual set volumes are chronological without a cap or source mutation', () => {
   const history = Array.from({ length: 25 }, (_, index) => session(String(index), new Date(2026, 7, index + 1))).reverse()
   history[0].logs.reverse()
   const original = structuredClone(history)
   const points = progressPoints(history, 'barbell-bench', '3m', 'weight', now)
-  assert.equal(points.length, 50)
+  assert.equal(points.length, 25)
   assert.equal(points[0].sessionId, '0')
   assert.equal(points.at(-1).sessionId, '24')
-  assert.deepEqual(points.slice(-2).map((point) => point.log.setIndex), [0, 1])
+  assert.deepEqual(points.slice(-2).map((point) => point.log.setIndex), [0, 0])
+  const volumes = progressPoints(history, 'barbell-bench', '3m', 'volume', now)
+  assert.equal(volumes.length, 50)
+  assert.deepEqual(volumes.slice(-2).map((point) => point.log.setIndex), [0, 1])
   assert.deepEqual(history, original)
   assert.deepEqual(progressPoints(history, 'db-curl', 'max', 'weight', now), [])
 })
 
-test('weight and volume use each actual set, not targets, totals, or substituted zeroes', () => {
+test('weight uses the heaviest actual set while volume retains all recorded sets', () => {
   const history = [session('work', new Date(2026, 8, 1), [80, 70, null, 0])]
-  assert.deepEqual(progressPoints(history, 'barbell-bench', 'max', 'weight', now).map((point) => point.value), [80, 70, 0])
+  assert.deepEqual(progressPoints(history, 'barbell-bench', 'max', 'weight', now).map((point) => point.value), [80])
   assert.deepEqual(progressPoints(history, 'barbell-bench', 'max', 'volume', now).map((point) => point.value), [240, 700, 0])
-  assert.equal(progressPoints(history, 'barbell-bench', 'max', 'weight', now)[1].log.rir, 2)
+  assert.equal(progressPoints(history, 'barbell-bench', 'max', 'weight', now)[0].log.rir, 2)
+})
+
+test('heaviest weight keeps its own set details, stable ties and distinct sessions on the same day', () => {
+  const date = new Date(2026, 8, 1)
+  const history = [
+    session('morning', date, [70, 80, 80, null]),
+    session('evening', date, [null, 0]),
+    session('missing', date, [null]),
+  ]
+  history[0].logs.reverse()
+  const points = progressPoints(history, 'barbell-bench', 'max', 'weight', now)
+  assert.deepEqual(points.map((point) => point.value), [80, 0])
+  assert.equal(points[0].sessionId, 'morning')
+  assert.equal(points[0].log.setIndex, 1)
+  assert.equal(points[0].log.reps, 10)
+  assert.equal(points[1].sessionId, 'evening')
 })
 
 test('1RM uses the best eligible Epley estimate, not the heaviest set', () => {
@@ -63,7 +82,7 @@ test('1RM uses the best eligible Epley estimate, not the heaviest set', () => {
   assert.equal(estimatedOneRepMax(getExercise('push-up'), { weight: 20, reps: 5 }), null)
   history[0].logs.forEach((log) => { log.reps = 15 })
   assert.deepEqual(progressPoints(history, 'barbell-bench', 'max', 'oneRepMax', now), [])
-  assert.equal(progressPoints(history, 'barbell-bench', 'max', 'weight', now).length, 2)
+  assert.equal(progressPoints(history, 'barbell-bench', 'max', 'weight', now).length, 1)
 })
 
 test('empty, unfinished, future and unlogged sessions do not invent points', () => {

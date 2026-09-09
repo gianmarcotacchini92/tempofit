@@ -113,8 +113,8 @@ export function ProgressChart({ history }: { history: WorkoutSession[] }) {
     {exercise ? <>
       <select className="full" aria-label="Esercizio del grafico" value={exercise.id} onChange={(event) => setSelected(event.target.value)}>{tracked.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
       {points.length ? <>
-        <p className="field-help chart-summary">{new Set(points.map((point) => point.sessionId)).size} sessioni / {points.length} {metric === 'oneRepMax' ? 'stime' : 'serie'} / {range === 'max' ? 'tutto lo storico' : `ultimi ${PROGRESS_RANGES.find((item) => item.id === range)!.label}`}.<br />
-          {metric === 'oneRepMax' ? 'Un punto per sessione' : 'Un punto per serie'}, in ordine cronologico; la distanza tra i punti non indica il tempo trascorso.</p>
+        <p className="field-help chart-summary">{new Set(points.map((point) => point.sessionId)).size} sessioni / {points.length} {metric === 'oneRepMax' ? 'stime' : metric === 'weight' ? 'carichi massimi' : 'serie'} / {range === 'max' ? 'tutto lo storico' : `ultimi ${PROGRESS_RANGES.find((item) => item.id === range)!.label}`}.<br />
+          {metric === 'volume' ? 'Un punto per serie' : 'Un punto per sessione'}, in ordine cronologico; la distanza tra i punti non indica il tempo trascorso.</p>
         <InteractiveChart key={`${exercise.id}-${range}-${metric}`} points={points} metric={metric} exerciseName={exercise.name} />
       </> : <div className="chart-empty"><ChartNoAxesCombined size={36} strokeWidth={1.3} /><h4>Nessun dato per questa selezione.</h4><p>{metric === 'oneRepMax' ? 'Servono serie da 1 a 10 ripetizioni con un carico positivo, su esercizi non a corpo libero.' : 'Nessuna serie con carico registrato nel periodo scelto.'} Prova un altro periodo o una metrica diversa.</p></div>}
       {metric === 'oneRepMax' && <p className="field-help">Stima Epley: peso × (1 + ripetizioni / 30); con una ripetizione si usa il peso registrato. Solo serie da 1 a 10 ripetizioni. RIR non incluso: la stima non e un carico da provare ne una prescrizione.</p>}

@@ -10,7 +10,7 @@ export const PROGRESS_RANGES = [
 export type ProgressRange = typeof PROGRESS_RANGES[number]['id']
 export type ProgressMetric = 'weight' | 'oneRepMax' | 'volume'
 export const PROGRESS_METRICS: { id: ProgressMetric; label: string; unit: string; description: string }[] = [
-  { id: 'weight', label: 'Peso utilizzato', unit: 'kg', description: 'Il carico effettivamente registrato in ogni serie' },
+  { id: 'weight', label: 'Peso utilizzato', unit: 'kg', description: 'Il carico piu pesante registrato in ogni sessione' },
   { id: 'oneRepMax', label: 'Carico massimale', unit: 'kg', description: '1RM stimato: la migliore stima di ogni sessione, non un massimale misurato' },
   { id: 'volume', label: 'Volume della serie', unit: 'kg \u00d7 rip.', description: 'Peso registrato \u00d7 ripetizioni della singola serie, non il totale della sessione' },
 ]
@@ -56,7 +56,7 @@ export function progressPoints(history: WorkoutSession[], exerciseId: string, ra
               : metric === 'volume' ? log.weight! * log.reps : log.weight
             return value === null ? [] : [{ sessionId: session.id, sessionName: session.plan.name, date: session.startedAt, log, value }]
           }))
-      if (metric !== 'oneRepMax' || !points.length) return points
+      if (metric === 'volume' || !points.length) return points
       return [points.reduce((best, point) => point.value > best.value ? point : best)]
     })
 }

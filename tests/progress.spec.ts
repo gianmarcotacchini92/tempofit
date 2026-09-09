@@ -23,7 +23,7 @@ async function openProgress(page: Page, history: WorkoutSession[]) {
   await (await mobile.isVisible() ? mobile : page.locator('.desktop-navigation')).getByRole('button', { name: 'Progressi', exact: true }).click()
 }
 
-test('progress ranges include every session, and metric buttons show actual sets, volume and estimated 1RM', async ({ page, isMobile }) => {
+test('progress ranges include every session, and metric buttons show heaviest weight, set volume and estimated 1RM', async ({ page, isMobile }) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   const history = [
@@ -37,13 +37,14 @@ test('progress ranges include every session, and metric buttons show actual sets
   const periods = page.getByRole('group', { name: 'Periodo del grafico' })
   const metrics = page.getByRole('group', { name: 'Metrica del grafico' })
   await expect(periods.getByRole('button', { name: '3 mesi', exact: true })).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.locator('.chart-point')).toHaveCount(24)
-  for (const [label, count] of [['6 mesi', 26], ['1 anno', 28], ['Max', 30]] as const) {
+  await expect(page.locator('.chart-point')).toHaveCount(12)
+  for (const [label, count] of [['6 mesi', 13], ['1 anno', 14], ['Max', 15]] as const) {
     await periods.getByRole('button', { name: label, exact: true }).click()
     await expect(page.locator('.chart-point')).toHaveCount(count)
     await expect(periods.getByRole('button', { name: label, exact: true })).toHaveAttribute('aria-pressed', 'true')
   }
-  await expect(page.locator('.chart-summary')).toContainText('15 sessioni / 30 serie / tutto lo storico')
+  await expect(page.locator('.chart-summary')).toContainText('15 sessioni / 15 carichi massimi / tutto lo storico')
+  await expect(page.locator('.chart-summary')).toContainText('Un punto per sessione')
   const first = page.locator('.chart-point').first()
   if (isMobile) await first.tap()
   else await first.hover()
@@ -52,19 +53,21 @@ test('progress ranges include every session, and metric buttons show actual sets
   await expect(page.locator('.chart-detail')).toContainText('240 kg × rip.')
   await expect(page.locator('.chart-detail')).toContainText('RIR--')
   await page.getByRole('button', { name: 'Successivo', exact: true }).click()
-  await expect(page.locator('.chart-detail')).toContainText('Serie 2')
-  await expect(page.locator('.chart-detail-value')).toHaveText('70 kg')
-  await expect(page.locator('.chart-detail')).toContainText('700 kg × rip.')
-  await expect(page.locator('.chart-detail')).toContainText('1,5')
+  await expect(page.locator('.chart-detail')).toContainText('Workout eight-months')
+  await expect(page.locator('.chart-detail-value')).toHaveText('80 kg')
   await metrics.getByRole('button', { name: 'Volume della serie', exact: true }).click()
   await expect(page.locator('.chart-point')).toHaveCount(30)
-  await expect(page.locator('.chart-detail')).not.toContainText('Serie 2')
+  await expect(page.locator('.chart-detail')).not.toContainText('Workout eight-months')
+  await expect(page.locator('.chart-summary')).toContainText('Un punto per serie')
   const chart = page.locator('.weight-chart svg')
   await chart.focus()
   await chart.press('Home')
   await expect(page.locator('.chart-detail-value')).toHaveText('240 kg × rip.')
   await chart.press('ArrowRight')
   await expect(page.locator('.chart-detail-value')).toHaveText('700 kg × rip.')
+  await expect(page.locator('.chart-detail')).toContainText('Serie 2')
+  await expect(page.locator('.chart-detail')).toContainText('70 kg')
+  await expect(page.locator('.chart-detail')).toContainText('1,5')
   await chart.press('End')
   await expect(page.getByRole('button', { name: 'Successivo', exact: true })).toBeDisabled()
   await chart.press('Escape')
@@ -87,7 +90,7 @@ test('progress handles old-only data, a single zero, missing weight, and unsuppo
   ])
   await expect(page.getByText('Nessun dato per questa selezione.')).toBeVisible()
   await page.getByRole('button', { name: 'Max', exact: true }).click()
-  await expect(page.locator('.chart-point')).toHaveCount(2)
+  await expect(page.locator('.chart-point')).toHaveCount(1)
   await page.getByRole('button', { name: 'Successivo', exact: true }).click()
   await expect(page.locator('.chart-detail-value')).toHaveText('20,25 kg')
   await expect(page.locator('.chart-detail')).toContainText('60,75 kg × rip.')

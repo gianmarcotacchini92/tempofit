@@ -90,8 +90,10 @@ modificare le impostazioni di sicurezza del sistema.
   I periodi partono dalla data odierna (mesi di calendario); Max include tutto
   lo storico completato fino a oggi. Riepiloghi e distribuzione muscolare restano
   riferiti all'intero storico.
-- Pulsanti Peso utilizzato e Volume della serie (peso registrato x ripetizioni):
-  ogni punto rappresenta una serie effettiva. Carico massimale mostra invece
+- Peso utilizzato mostra solo il carico piu pesante registrato per sessione,
+  con il dettaglio della serie corrispondente (la prima a parita di peso).
+  Volume della serie (peso registrato x ripetizioni) mantiene un punto per
+  ogni serie effettiva. Carico massimale mostra invece
   la migliore stima 1RM della sessione (Epley, solo 1-10 ripetizioni e carico
   positivo; con una ripetizione si usa il peso registrato). Non e una misura
   del massimale ne una prescrizione, non usa il RIR e non si applica al corpo
