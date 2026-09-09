@@ -4,6 +4,7 @@ import { EXERCISES, EQUIPMENT_LABELS, GOAL_LABELS, MUSCLE_LABELS, getExercise } 
 import type { Equipment, Exercise, Muscle, WorkoutSession, WorkoutSettings } from './domain'
 import { ExerciseArtwork, HeroArtwork } from './components'
 import { dateLabel, timeLabel } from './format'
+import { ProgressChart } from './ProgressChart'
 
 function startOfWeek() {
   const date = new Date()
@@ -103,34 +104,17 @@ export function History({ history, onCreate }: { history: WorkoutSession[]; onCr
 }
 
 export function Progress({ history }: { history: WorkoutSession[] }) {
-  const [selected, setSelected] = useState('')
-  const tracked = EXERCISES.filter((exercise) => history.some((session) => session.plan.exercises.some((item) => item.exerciseId === exercise.id && session.logs.some((log) => log.planExerciseId === item.id && log.weight !== null))))
-  const exerciseId = tracked.some((exercise) => exercise.id === selected) ? selected : tracked[0]?.id
-  const points = history.slice().sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt)).flatMap((session) => {
-    const ids = session.plan.exercises.filter((item) => item.exerciseId === exerciseId).map((item) => item.id)
-    const weights = session.logs.filter((log) => ids.includes(log.planExerciseId) && log.weight !== null).map((log) => log.weight!)
-    return weights.length ? [{ date: session.startedAt, weight: Math.max(...weights) }] : []
-  }).slice(-10)
   const muscleSets = (Object.keys(MUSCLE_LABELS) as Muscle[]).map((muscle) => ({ muscle, sets: history.reduce((sum, session) =>
     sum + session.logs.filter((log) => {
       const item = session.plan.exercises.find((exercise) => exercise.id === log.planExerciseId)
       return item ? getExercise(item.exerciseId).muscles.includes(muscle) : false
     }).length, 0) }))
   const maxSets = Math.max(1, ...muscleSets.map((item) => item.sets))
-  const maxWeight = Math.max(1, ...points.map((point) => point.weight)) * 1.15
   return <><div className="page-heading"><div><span className="eyebrow">GUARDA QUANTA STRADA FAI</span><h1>Piccoli passi. Dati reali<span className="accent">.</span></h1><p>Il confronto giusto e con il tuo allenamento precedente.</p></div></div>
     <div className="stat-grid"><Metric icon={<Dumbbell size={20} />} label="Sessioni salvate" value={String(history.length)} detail="incluse le parziali" color="green" />
       <Metric icon={<Target size={20} />} label="Serie registrate" value={String(history.reduce((sum, session) => sum + session.logs.length, 0))} detail="solo lavoro completato" color="purple" />
       <Metric icon={<Clock3 size={20} />} label="Tempo totale" value={String(history.reduce((sum, session) => sum + sessionMinutes(session), 0))} unit="min" detail="dedicati a te" color="peach" /></div>
-    <div className="progress-grid"><section className="panel chart-panel"><div className="section-heading"><div><h3>Un esercizio, nel tempo</h3><p>Carico massimo registrato per sessione</p></div><TrendingUp size={20} className="accent" /></div>
-      {tracked.length ? <><select className="full" aria-label="Esercizio del grafico" value={exerciseId} onChange={(event) => setSelected(event.target.value)}>{tracked.map((exercise) => <option key={exercise.id} value={exercise.id}>{exercise.name}</option>)}</select>
-        <div className="weight-chart"><svg viewBox="0 0 520 220" role="img" aria-label={`Carichi per ${getExercise(exerciseId!).name}: ${points.map((point) => `${dateLabel(point.date)} ${point.weight} kg`).join(', ')}`}>
-          {[0, 1, 2, 3].map((line) => <g key={line}><line x1="42" x2="495" y1={180 - line * 50} y2={180 - line * 50} stroke="#303137" strokeDasharray="4 5" /><text x="0" y={185 - line * 50} fill="#a0a1ab" fontSize="11">{Math.round(maxWeight * line / 3)}</text></g>)}
-          <polyline points={points.map((point, index) => `${points.length === 1 ? 260 : 52 + index * 428 / (points.length - 1)},${180 - point.weight / maxWeight * 150}`).join(' ')} fill="none" stroke="#d0f58a" strokeWidth="3" strokeLinejoin="round" />
-          {points.map((point, index) => <g key={`${point.date}-${index}`}><circle cx={points.length === 1 ? 260 : 52 + index * 428 / (points.length - 1)} cy={180 - point.weight / maxWeight * 150} r="5" fill="#d0f58a" stroke="#191a1e" strokeWidth="2" /><text x={points.length === 1 ? 260 : 52 + index * 428 / (points.length - 1)} y="207" textAnchor="middle" fill="#a0a1ab" fontSize="10">{new Date(point.date).toLocaleDateString('it-IT', { day: 'numeric', month: 'numeric' })}</text></g>)}
-        </svg></div><p className="field-help">Confronta anche ripetizioni e RIR nello storico. Il carico da solo non misura forza o crescita muscolare.</p></>
-        : <div className="chart-empty"><ChartNoAxesCombined size={36} strokeWidth={1.3} /><h4>Niente numeri inventati.</h4><p>Registra il carico di una serie per iniziare a costruire il tuo grafico.</p></div>}
-    </section><section className="panel distribution-panel"><div className="section-heading"><div><h3>Dove hai messo energia</h3><p>Serie per muscolo principale / tutto lo storico</p></div></div>
+    <div className="progress-grid"><ProgressChart history={history} /><section className="panel distribution-panel"><div className="section-heading"><div><h3>Dove hai messo energia</h3><p>Serie per muscolo principale / tutto lo storico</p></div></div>
       <div className="muscle-bars">{muscleSets.map(({ muscle, sets }) => <div key={muscle}><div><span>{MUSCLE_LABELS[muscle]}</span><strong>{sets}</strong></div><div className="distribution-track"><span style={{ width: `${sets / maxSets * 100}%` }} /></div></div>)}</div>
       <p className="field-help">Il coinvolgimento secondario non viene contato. Una serie puo coinvolgere piu muscoli principali.</p>
     </section></div>

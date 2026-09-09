@@ -86,6 +86,21 @@ modificare le impostazioni di sicurezza del sistema.
   salvataggio di sessioni complete o parziali.
 - Storico, grafico dei carichi della stessa variante e distribuzione delle serie
   sui muscoli principali.
+- Progressi con filtri 3 mesi, 6 mesi, 1 anno e Max, senza limite di sessioni.
+  I periodi partono dalla data odierna (mesi di calendario); Max include tutto
+  lo storico completato fino a oggi. Riepiloghi e distribuzione muscolare restano
+  riferiti all'intero storico.
+- Pulsanti Peso utilizzato e Volume della serie (peso registrato x ripetizioni):
+  ogni punto rappresenta una serie effettiva. Carico massimale mostra invece
+  la migliore stima 1RM della sessione (Epley, solo 1-10 ripetizioni e carico
+  positivo; con una ripetizione si usa il peso registrato). Non e una misura
+  del massimale ne una prescrizione, non usa il RIR e non si applica al corpo
+  libero senza un peso corporeo registrato. Peso e volume non raddoppiano
+  automaticamente manubri, lati o zavorre.
+- Grafico esplorabile con mouse, tocco, frecce della tastiera e pulsanti
+  Precedente/Successivo: dettagli di data, serie, carico, ripetizioni, volume
+  e RIR. I punti sono equidistanti in ordine cronologico, non proporzionali
+  al tempo trascorso; i valori mancanti non diventano zero.
 - Proposte di aumento del carico solo sul focus, dopo due esposizioni complete
   comparabili al limite alto delle ripetizioni e con RIR adeguato. Anche serie,
   range e recuperi della nuova prescrizione devono essere comparabili.

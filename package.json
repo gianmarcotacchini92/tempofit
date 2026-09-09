@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "test": "node --test src/domain.test.mjs src/storage.test.mjs src/csvImport.test.mjs",
+    "test": "node --test src/domain.test.mjs src/storage.test.mjs src/csvImport.test.mjs src/progress.test.mjs",
     "test:e2e": "playwright test",
     "preview": "vite preview"
   },
