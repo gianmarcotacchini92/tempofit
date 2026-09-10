@@ -73,6 +73,13 @@ export function Configurator({ initial, history, onClose, onGenerate }: {
         <p className="field-help">Il piano usa questo minimo o il recupero richiesto dall'esercizio, se maggiore. Meno tempo significa meno lavoro, non pause piu corte.</p>
       </section>
       <section className="config-section">
+        <label className="checkbox-label"><input type="checkbox" checked={settings.optimizeTime === true}
+          onChange={(event) => update({ optimizeTime: event.target.checked })} /> Ottimizza il tempo</label>
+        <p className="field-help">Consenti drop set (stripping), rest-pause e superserie compatibili, soprattutto nelle sedute fino a 45 minuti. Puoi cambiarli nel piano: non vengono aggiunti a ogni esercizio e non sostituiscono il lavoro pesante del focus.</p>
+        <p className="field-help">Le mini-serie non equivalgono a serie complete. Le pause brevi valgono solo dentro il blocco; il recupero tra serie o giri resta rispettato. Per le superserie servono attrezzi vicini e disponibili.</p>
+        {settings.optimizeTime && (settings.level === 'beginner' || settings.goal === 'strength') && <p className="field-help">Con livello principiante o obiettivo solo forza manterremo serie tradizionali.</p>}
+      </section>
+      <section className="config-section">
         <label className="checkbox-label"><input type="checkbox" checked={settings.includeAccessories === true}
           onChange={(event) => update({ includeAccessories: event.target.checked })} /> Aggiungi accessori per gruppi collegati</label>
         <p className="field-help">Facoltativo, da 60 minuti: piccoli complementi per spalle, bicipiti, tricipiti o core solo dopo il lavoro prioritario e se resta spazio. Senza questa opzione, restiamo sui gruppi scelti.</p>

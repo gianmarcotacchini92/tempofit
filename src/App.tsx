@@ -9,8 +9,9 @@ import type { AppData } from './storage'
 import { importWorkoutCsv } from './csvImport'
 import { repairCsvHistory } from './csvRepair'
 import type { CsvRepairResult } from './csvRepair'
-import { needsCsvRepair, validatePlan } from './domain'
+import { needsCsvRepair, validatePlan, workoutSetSteps } from './domain'
 import type { Exercise, SetLog, WorkoutPlan, WorkoutSettings } from './domain'
+import { loggedSetsLabel } from './format'
 import './App.css'
 
 type View = 'home' | 'workout' | 'exercises' | 'history' | 'progress'
@@ -104,12 +105,34 @@ function App() {
 
   function logSet(log: SetLog) {
     if (storageError) return
+    const session = data.active
+    if (!session) { setToast('Nessuna sessione attiva: riapri il tuo allenamento.'); return }
+    const steps = workoutSetSteps(session.plan)
+    const step = steps.find((item) => item.item.id === log.planExerciseId && item.setIndex === log.setIndex && item.part === log.part)
+    if (!step) { setToast('Questo passaggio non appartiene al piano attivo.'); return }
+    const recorded = (candidate: typeof step) => session.logs.some((item) => item.planExerciseId === candidate.item.id && item.setIndex === candidate.setIndex && item.part === candidate.part)
+    if (recorded(step)) { setToast('Questo passaggio e gia stato registrato.'); return }
+    if (step.part && !session.logs.some((item) => item.planExerciseId === log.planExerciseId && item.setIndex === log.setIndex && !item.part)) {
+      setToast('Registra la serie principale prima della mini-serie.'); return
+    }
+    if (step.item.supersetGroup) {
+      const next = steps.find((candidate) => candidate.item.supersetGroup === step.item.supersetGroup && !recorded(candidate))
+      if (next !== step) { setToast('Nella superserie completa prima il passaggio precedente: A, poi B.'); return }
+    }
     setNow(Date.now())
     setData((old) => {
-      if (!old.active || old.active.logs.some((item) => item.planExerciseId === log.planExerciseId && item.setIndex === log.setIndex)) return old
-      const item = old.active.plan.exercises.find((exercise) => exercise.id === log.planExerciseId)
-      if (!item) throw new Error('Serie non associata alla sessione corrente')
-      return { ...old, active: { ...old.active, logs: [...old.active.logs, log] }, restEndsAt: Date.now() + item.restSeconds * 1000 }
+      if (!old.active || old.active.logs.some((item) => item.planExerciseId === log.planExerciseId && item.setIndex === log.setIndex && item.part === log.part)) return old
+      return { ...old, active: { ...old.active, logs: [...old.active.logs, log] }, restEndsAt: step.restAfterSeconds > 0 ? Date.now() + step.restAfterSeconds * 1000 : null }
+    })
+  }
+
+  function undoSet(id: string) {
+    setData((old) => {
+      const target = old.active?.logs.find((log) => log.id === id)
+      if (!old.active || !target) return old
+      const logs = old.active.logs.filter((log) => log.id !== id && !(target.part === undefined
+        && log.planExerciseId === target.planExerciseId && log.setIndex === target.setIndex && log.part !== undefined))
+      return { ...old, active: { ...old.active, logs }, restEndsAt: null }
     })
   }
 
@@ -189,12 +212,12 @@ function App() {
         {storageError && <div className="alert storage-alert" role="alert"><p>{storageError}</p><div><button className="button secondary compact" onClick={() => downloadData(JSON.stringify(data, null, 2), 'tempofit-dati-correnti.json')}>Esporta dati correnti</button><button className="button secondary compact" onClick={exportRaw}>Esporta originale</button><button className="button secondary compact" onClick={() => window.location.reload()}>Ricarica</button><button className="button ghost compact" onClick={() => setDialog('reset')}>Ripristina</button></div></div>}
         {view === 'home' && <Dashboard history={data.history} active={data.active} onCreate={configure} onHistory={() => navigate('history')} onResume={() => navigate('workout')} />}
         {view === 'workout' && (data.active ? <ActiveWorkout session={data.active} now={now} restEndsAt={data.restEndsAt} onLog={logSet} onInspect={setInspecting}
-          onUndo={(id) => setData((old) => ({ ...old, active: old.active ? { ...old.active, logs: old.active.logs.filter((log) => log.id !== id) } : null, restEndsAt: null }))}
+          onUndo={undoSet}
           onRest={(end) => { setNow(Date.now()); setData((old) => ({ ...old, restEndsAt: end })) }} onFinish={() => setDialog('finish')} onDiscard={() => setDialog('discard')} blocked={Boolean(storageError)} />
           : data.draft ? <WorkoutEditor plan={data.draft} onChange={(plan) => setData((old) => ({ ...old, draft: plan }))} onConfigure={() => setConfig(data.draft!.settings)} onStart={startWorkout} onInspect={setInspecting} blocked={Boolean(storageError)} />
-            : <NoWorkout onCreate={configure} />)}
+            : <NoWorkout onCreate={() => configure()} />)}
         {view === 'exercises' && <ExerciseLibrary equipment={data.settings.equipment} onInspect={setInspecting} />}
-        {view === 'history' && <History history={data.history} onCreate={configure} onInspect={setInspecting} />}
+        {view === 'history' && <History history={data.history} onCreate={() => configure()} onInspect={setInspecting} />}
         {view === 'progress' && <Progress history={data.history} onInspect={setInspecting} />}
         <footer className="page-footer"><span>Fatto per il tuo ritmo. <a href={`${import.meta.env.BASE_URL}exercises/ATTRIBUTION.json`} target="_blank" rel="noreferrer">Crediti illustrazioni</a></span><span>TempoFit <span className="accent">/</span> Prototipo locale 0.1</span></footer>
       </main>
@@ -234,7 +257,7 @@ function App() {
       <h3>04 / Ritorna, con un riferimento</h3><p>Lo storico alimenta suggerimenti conservativi sulla stessa variante. Senza dati sufficienti scegli tu il carico. Il prototipo non effettua diagnosi, deload automatici o valutazioni cliniche.</p>
       <div className="quiet-note"><p>Prototipo per adulti senza controindicazioni note. Non e un dispositivo medico. In caso di dolore, interrompi il movimento e chiedi una valutazione qualificata. Nessun LLM riceve i tuoi dati.</p></div>
     </div></Modal>}
-    {dialog === 'finish' && data.active && <Modal title="Un altro passo fatto." subtitle={`${data.active.logs.length} serie registrate. Salviamo il lavoro di oggi?`} onClose={() => setDialog(null)}>
+    {dialog === 'finish' && data.active && <Modal title="Un altro passo fatto." subtitle={`${loggedSetsLabel(data.active.logs)} registrate. Salviamo il lavoro di oggi?`} onClose={() => setDialog(null)}>
       <p className="dialog-copy">Solo le serie completate entrano nello storico e nella progressione. Le altre restano indicate come non eseguite.</p><div className="modal-actions"><button className="button secondary" onClick={() => setDialog(null)}>Continua sessione</button><button className="button primary" onClick={finishWorkout}><Check size={18} /> Salva e termina</button></div></Modal>}
     {dialog === 'discard' && <Modal title="Scartare questa sessione?" onClose={() => setDialog(null)}><p className="dialog-copy">Le serie della sessione in corso saranno eliminate. Il piano e lo storico precedente restano disponibili.</p><div className="modal-actions"><button className="button secondary" onClick={() => setDialog(null)}>Continua ad allenarti</button><button className="button danger" onClick={() => { setData((old) => ({ ...old, active: null, restEndsAt: null })); setDialog(null) }}>Scarta sessione</button></div></Modal>}
     {dialog === 'reset' && <Modal title="Ripristinare lo spazio locale?" onClose={() => setDialog(null)}><p className="dialog-copy">Questa azione elimina profilo, piani e allenamenti TempoFit da questo browser. Esporta un backup prima di procedere. Nessun altro dato del browser viene modificato.</p><div className="modal-actions"><button className="button secondary" onClick={() => setDialog(null)}>Annulla</button><button className="button danger" onClick={() => {

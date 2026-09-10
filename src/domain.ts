@@ -4,6 +4,7 @@ export type Muscle = 'chest' | 'back' | 'shoulders' | 'legs' | 'biceps' | 'trice
 export type Equipment = 'gym' | 'dumbbells' | 'bodyweight'
 export type Goal = 'strength' | 'hypertrophy' | 'mixed'
 export type Level = 'beginner' | 'intermediate' | 'advanced'
+export type IntensityTechnique = 'drop-set' | 'rest-pause'
 
 export const MUSCLE_LABELS: Record<Muscle, string> = {
   chest: 'Petto', back: 'Schiena', shoulders: 'Spalle', legs: 'Gambe',
@@ -346,6 +347,7 @@ export interface WorkoutSettings {
   avoidedPatterns: string[]
   includeAccessories?: boolean
   minRestSeconds?: number
+  optimizeTime?: boolean
 }
 
 export const DEFAULT_SETTINGS: WorkoutSettings = {
@@ -366,6 +368,8 @@ export interface PlanExercise {
   targetLoad: number | null
   progressionNote?: string
   sourceExerciseName?: string
+  technique?: IntensityTechnique
+  supersetGroup?: string
 }
 export interface WorkoutPlan {
   id: string
@@ -385,6 +389,16 @@ export interface SetLog {
   rir: number | null
   completedAt: string
   sourceSetIndex?: number
+  part?: 'drop' | 'rest-pause'
+}
+export interface SetStep {
+  item: PlanExercise
+  setIndex: number
+  part?: 'drop' | 'rest-pause'
+  repMin: number
+  repMax: number
+  rir: number
+  restAfterSeconds: number
 }
 export interface WorkoutSession {
   id: string
@@ -464,6 +478,9 @@ function settingsErrors(value: unknown): string[] {
   if (value.includeAccessories !== undefined && typeof value.includeAccessories !== 'boolean') {
     errors.push('Scegli se includere gli accessori con il controllo dedicato.')
   }
+  if (value.optimizeTime !== undefined && typeof value.optimizeTime !== 'boolean') {
+    errors.push('Ottimizza il tempo deve essere attivato o disattivato con il controllo dedicato.')
+  }
   if (value.minRestSeconds !== undefined && !integerBetween(value.minRestSeconds, 0, 300)) {
     errors.push('Il recupero minimo deve essere un numero intero tra 0 e 300 secondi.')
   }
@@ -504,22 +521,153 @@ function validPrescription(item: PlanExercise): boolean {
     && (item.targetLoad === null || (finite(item.targetLoad) && item.targetLoad > 0))
 }
 
+const INTENSITY_ISOLATIONS = new Set([
+  'db-curl', 'db-hammer-curl', 'db-lateral-raise', 'cable-triceps',
+  'cable-preacher-curl', 'leg-extension', 'seated-leg-curl',
+])
+const PAIR_DUMBBELLS = new Set(['db-curl', 'db-hammer-curl', 'db-lateral-raise', 'db-floor-press'])
+const PAIR_STATIONS = new Set(['cable-triceps', 'cable-row', 'lat-pulldown', 'close-grip-lat-pulldown'])
+const MINI_REST_SECONDS = 20
+const PAIR_TRANSITION_SECONDS = 30
+const DROP_PREPARATION_SECONDS = 10
+
+function intensityBlocks(plan: WorkoutPlan): number {
+  return plan.exercises.filter((item) => item.technique !== undefined).length
+    + new Set(plan.exercises.filter((item) => nonempty(item.supersetGroup)).map((item) => item.supersetGroup)).size
+}
+
+function advancedEligible(plan: WorkoutPlan, item: PlanExercise): boolean {
+  if (!plan || !Array.isArray(plan.exercises) || settingsErrors(plan.settings).length
+    || !plan.exercises.every((entry) => entry && typeof entry === 'object')
+    || plan.settings.level === 'beginner' || plan.settings.goal === 'strength'
+    || !plan.exercises.some((entry) => entry.id === item?.id) || !validPrescription(item)
+    || item.repMin < 8 || item.repMax < 10 || item.repMax > 20 || item.rir < 1) return false
+  const exercise = exerciseById.get(item.exerciseId)
+  if (!exercise || !allowed(exercise, plan.settings) || exercise.unilateral || isBodyweightExercise(exercise)
+    || item.restSeconds < Math.max(minimumRestSeconds(item), plan.settings.minRestSeconds ?? 0)) return false
+  // The first focus exercise remains a traditional, comparable progression anchor.
+  return plan.exercises.find((entry) => exerciseById.get(entry.exerciseId)?.muscles.includes(plan.settings.muscles[0]!))?.id !== item.id
+}
+
+export function intensityOptions(plan: WorkoutPlan, item: PlanExercise): IntensityTechnique[] {
+  if (!advancedEligible(plan, item) || item.supersetGroup !== undefined
+    || !INTENSITY_ISOLATIONS.has(item.exerciseId)
+    || (intensityBlocks(plan) >= 2 && !plan.exercises.find((entry) => entry.id === item.id)?.technique)) return []
+  return ['drop-set', 'rest-pause']
+}
+
+function compatiblePair(plan: WorkoutPlan, a: PlanExercise, b: PlanExercise): boolean {
+  if (!advancedEligible(plan, a) || !advancedEligible(plan, b) || a.technique !== undefined || b.technique !== undefined
+    || a.sets !== b.sets || a.sets < 2 || a.exerciseId === b.exerciseId) return false
+  const setupCompatible = (PAIR_DUMBBELLS.has(a.exerciseId) && (PAIR_DUMBBELLS.has(b.exerciseId) || PAIR_STATIONS.has(b.exerciseId)))
+    || (PAIR_STATIONS.has(a.exerciseId) && PAIR_DUMBBELLS.has(b.exerciseId))
+  if (!setupCompatible) return false
+  const first = getExercise(a.exerciseId)
+  const second = getExercise(b.exerciseId)
+  const involved = new Set([...first.muscles, ...first.secondary])
+  return ![...second.muscles, ...second.secondary].some((muscle) => involved.has(muscle))
+}
+
+export function supersetCandidates(plan: WorkoutPlan, item: PlanExercise): PlanExercise[] {
+  if (!plan || !Array.isArray(plan.exercises) || !item
+    || !plan.exercises.every((entry) => entry && typeof entry === 'object')) return []
+  const index = plan.exercises.findIndex((entry) => entry.id === item.id)
+  if (index < 0) return []
+  return [plan.exercises[index - 1], plan.exercises[index + 1]].filter((partner): partner is PlanExercise => {
+    if (!partner || !compatiblePair(plan, item, partner)) return false
+    if (item.supersetGroup !== undefined || partner.supersetGroup !== undefined) {
+      return nonempty(item.supersetGroup) && item.supersetGroup === partner.supersetGroup
+        && plan.exercises.filter((entry) => entry.supersetGroup === item.supersetGroup).length === 2
+    }
+    return intensityBlocks(plan) < 2
+  })
+}
+
+function pairedNext(plan: WorkoutPlan, index: number): PlanExercise | undefined {
+  const item = plan.exercises[index]!
+  const next = plan.exercises[index + 1]
+  return item && nonempty(item.supersetGroup) && next?.supersetGroup === item.supersetGroup
+    && supersetCandidates(plan, item).some((partner) => partner.id === next.id) ? next : undefined
+}
+
+function prescribedRest(plan: WorkoutPlan, item: PlanExercise): number {
+  return Math.max(item.restSeconds, minimumRestSeconds(item), plan.settings.minRestSeconds ?? 0)
+}
+
+function blockExitRest(plan: WorkoutPlan, lastIndex: number, items: PlanExercise[]): number {
+  return lastIndex < plan.exercises.length - 1 ? Math.max(...items.map((item) => prescribedRest(plan, item))) : 0
+}
+
+export function workoutSetSteps(plan: WorkoutPlan): SetStep[] {
+  const steps: SetStep[] = []
+  const rest = (item: PlanExercise) => prescribedRest(plan, item)
+  const regular = (item: PlanExercise, setIndex: number, restAfterSeconds: number): SetStep => ({
+    item, setIndex, repMin: item.repMin, repMax: item.repMax, rir: item.rir, restAfterSeconds,
+  })
+  for (let index = 0; index < plan.exercises.length; index++) {
+    const item = plan.exercises[index]!
+    const partner = pairedNext(plan, index)
+    if (partner) {
+      for (let setIndex = 0; setIndex < item.sets; setIndex++) {
+        steps.push(regular(item, setIndex, PAIR_TRANSITION_SECONDS))
+        steps.push(regular(partner, setIndex, setIndex < item.sets - 1
+          ? Math.max(rest(item), rest(partner)) : blockExitRest(plan, index + 1, [item, partner])))
+      }
+      index++
+      continue
+    }
+    const technique = item.technique && intensityOptions(plan, item).includes(item.technique) ? item.technique : undefined
+    for (let setIndex = 0; setIndex < item.sets; setIndex++) {
+      steps.push(regular(item, setIndex, setIndex < item.sets - 1 ? rest(item) : technique ? MINI_REST_SECONDS : 0))
+    }
+    if (technique) {
+      steps.push({
+        item, setIndex: item.sets - 1, part: technique === 'drop-set' ? 'drop' : 'rest-pause',
+        repMin: technique === 'drop-set' ? 6 : 3, repMax: technique === 'drop-set' ? 10 : 5,
+        rir: Math.max(1, item.rir), restAfterSeconds: blockExitRest(plan, index, [item]),
+      })
+    }
+  }
+  return steps
+}
+
 export function estimateExerciseSeconds(item: PlanExercise): number {
   if (!validPrescription(item)) return Infinity
   const exercise = exerciseById.get(item.exerciseId)
   if (!exercise) return Infinity
+  if (item.technique !== undefined && item.technique !== 'drop-set' && item.technique !== 'rest-pause') return Infinity
   const work = item.repMax * exercise.secondsPerRep * (exercise.unilateral ? 2 : 1)
+  const extension = item.technique === undefined ? 0 : MINI_REST_SECONDS + LOG_SECONDS
+    + (item.technique === 'drop-set' ? 10 : 5) * exercise.secondsPerRep
+    + (item.technique === 'drop-set' ? DROP_PREPARATION_SECONDS : 0)
   return exercise.setupSeconds + exercise.rampSeconds
-    + item.sets * (work + LOG_SECONDS) + (item.sets - 1) * item.restSeconds
+    + item.sets * (work + LOG_SECONDS) + (item.sets - 1) * item.restSeconds + extension
 }
 
 export function estimatePlanSeconds(plan: WorkoutPlan): number {
   if (!plan || !Array.isArray(plan.exercises)
     || !finite(plan.warmupSeconds) || plan.warmupSeconds < 0
     || !finite(plan.reserveSeconds) || plan.reserveSeconds < 0) return Infinity
-  return plan.warmupSeconds + plan.reserveSeconds
+  let seconds = plan.warmupSeconds + plan.reserveSeconds
     + plan.exercises.reduce((total, item) => total + estimateExerciseSeconds(item), 0)
     + Math.max(0, plan.exercises.length - 1) * TRANSITION_SECONDS
+  for (let index = 0; index < plan.exercises.length; index++) {
+    const item = plan.exercises[index]!
+    const partner = pairedNext(plan, index)
+    if (!partner) {
+      if (item?.technique && intensityOptions(plan, item).includes(item.technique) && index < plan.exercises.length - 1) {
+        // Full recovery after a mini-set includes the already-budgeted equipment transition.
+        seconds += blockExitRest(plan, index, [item]) - TRANSITION_SECONDS
+      }
+      continue
+    }
+    // Keep both setups/ramps; replace only the recoveries and the internal exercise transition.
+    seconds += item.sets * PAIR_TRANSITION_SECONDS - TRANSITION_SECONDS
+      - (item.sets - 1) * Math.min(item.restSeconds, partner.restSeconds)
+    if (index + 2 < plan.exercises.length) seconds += blockExitRest(plan, index + 1, [item, partner]) - TRANSITION_SECONDS
+    index++
+  }
+  return seconds
 }
 
 function allowed(exercise: Exercise, settings: WorkoutSettings): boolean {
@@ -604,6 +752,17 @@ export function validatePlan(plan: WorkoutPlan): string[] {
     if (settingsValid && plan.settings.level === 'beginner' && finite(item.rir) && item.rir < 3) {
       errors.push(`${exercise?.name ?? 'Esercizio'}: per iniziare mantieni almeno 3 ripetizioni in riserva.`)
     }
+    if (item.technique !== undefined
+      && (!settingsValid || !intensityOptions(plan, item).includes(item.technique))) {
+      errors.push(`${exercise?.name ?? 'Esercizio'}: tecnica di intensità non compatibile; mantieni serie tradizionali e il primo esercizio del focus.`)
+    }
+    if (item.supersetGroup !== undefined
+      && (!nonempty(item.supersetGroup) || !settingsValid || !supersetCandidates(plan, item).length)) {
+      errors.push(`${exercise?.name ?? 'Esercizio'}: la superserie richiede esattamente due esercizi adiacenti compatibili, senza altre tecniche e con lo stesso numero di serie.`)
+    }
+  }
+  if (plan.exercises.every((item) => item && typeof item === 'object') && intensityBlocks(plan) > 2) {
+    errors.push('Mantieni al massimo due blocchi di intensità per seduta, senza sommare tecniche sullo stesso esercizio.')
   }
   if (settingsValid) {
     const missing = plan.settings.muscles.filter((muscle) => !covered.has(muscle))
@@ -629,6 +788,7 @@ export function getSubstitutions(
   const required = selectedPrimary.length ? selectedPrimary : original.muscles
   return EXERCISES.filter((exercise) => exercise.id !== original.id
     && !existingIds.includes(exercise.id) && allowed(exercise, settings)
+    && (item.technique === undefined || INTENSITY_ISOLATIONS.has(exercise.id))
     && required.every((muscle) => exercise.muscles.includes(muscle)))
     .sort((a, b) => {
       const score = (exercise: Exercise) => Number(settings.preferredIds.includes(exercise.id)) * 4
@@ -666,7 +826,7 @@ function exposuresFor(exerciseId: string, history: WorkoutSession[]): Exposure[]
 }
 
 function meaningfulLog(log: SetLog): boolean {
-  return nonempty(log.id) && finite(log.weight) && log.weight > 0
+  return log.part === undefined && nonempty(log.id) && finite(log.weight) && log.weight > 0
     && integerBetween(log.reps, 1, 100) && validDate(log.completedAt)
     && integerBetween(log.setIndex, 0, 19)
 }
@@ -675,6 +835,7 @@ function fullExposure(exposure: Exposure, repMax: number, targetRir: number, loa
   const { session, item, logs } = exposure
   if (!validDate(session.finishedAt) || !validDate(session.startedAt)
     || Date.parse(session.finishedAt) < Date.parse(session.startedAt)
+    || item.technique !== undefined || item.supersetGroup !== undefined
     || !validPrescription(item) || item.sets < 2
     || item.repMax !== repMax || item.rir !== targetRir || logs.length !== item.sets) return false
   const indices = new Set<number>()
@@ -693,7 +854,7 @@ function fullExposure(exposure: Exposure, repMax: number, targetRir: number, loa
 
 export function suggestLoad(
   exerciseId: string, history: WorkoutSession[], repMax: number, targetRir: number, allowIncrease = true,
-  planned?: Pick<PlanExercise, 'sets' | 'repMin' | 'restSeconds'>,
+  planned?: Pick<PlanExercise, 'sets' | 'repMin' | 'restSeconds' | 'technique' | 'supersetGroup'>,
 ): number | null {
   const exercise = exerciseById.get(exerciseId)
   if (!exercise || isBodyweightExercise(exercise)
@@ -709,7 +870,7 @@ export function suggestLoad(
     }
   }
   if (lastLoad === null) return null
-  if (!allowIncrease) return lastLoad
+  if (!allowIncrease || planned?.technique !== undefined || planned?.supersetGroup !== undefined) return lastLoad
   const [latest, previous] = exposures
   if (!latest || !previous || latest.time === previous.time
     || (planned !== undefined && (latest.item.sets !== planned.sets
@@ -1004,6 +1165,84 @@ export function planBudgetNote(plan: WorkoutPlan): string | null {
     + 'Per una seduta più ampia puoi aggiungere altri gruppi o cambiare attrezzatura, senza accorciare i recuperi.'
 }
 
+function optimizePlanTime(plan: WorkoutPlan): { plan: WorkoutPlan; message: string } {
+  if (!plan.settings.optimizeTime) return { plan, message: '' }
+  if (plan.settings.level === 'beginner' || plan.settings.goal === 'strength') {
+    return { plan, message: 'Ottimizza il tempo: per principianti e sedute di sola forza manteniamo serie tradizionali, recuperi completi e progressione confrontabile.' }
+  }
+  if (plan.settings.minutes > 45) {
+    return { plan, message: 'Ottimizza il tempo: la scelta automatica è riservata alle sedute fino a 45 minuti. Qui manteniamo serie tradizionali; puoi modificare manualmente gli accessori compatibili.' }
+  }
+  const initialSeconds = estimatePlanSeconds(plan)
+  let result = plan
+  let substitutionNote = ''
+  for (let block = 0; block < 2; block++) {
+    let best: WorkoutPlan | undefined
+    let bestSaving = 0
+    const consider = (candidate: WorkoutPlan) => {
+      const saving = estimatePlanSeconds(result) - estimatePlanSeconds(candidate)
+      if (saving > bestSaving) {
+        best = candidate
+        bestSaving = saving
+      }
+    }
+    result.exercises.forEach((item, index) => {
+      if (item.technique !== undefined || item.supersetGroup !== undefined) return
+      const partner = result.exercises[index + 1]
+      if (partner && supersetCandidates(result, item).some((entry) => entry.id === partner.id)) {
+        const group = `superset-${index + 1}`
+        consider({ ...result, exercises: result.exercises.map((entry) =>
+          entry.id === item.id || entry.id === partner.id ? { ...entry, supersetGroup: group } : entry) })
+      }
+      const options = intensityOptions(result, item)
+      if (item.sets < 2 || !options.length) return
+      // Selector stacks favour one drop; dumbbells avoid collecting a second pair for rest-pause.
+      const technique: IntensityTechnique = item.exerciseId.startsWith('db-') ? 'rest-pause' : 'drop-set'
+      if (!options.includes(technique)) return
+      consider({ ...result, exercises: result.exercises.map((entry) =>
+        entry.id === item.id ? { ...entry, sets: entry.sets - 1, technique } : entry) })
+    })
+    if (!best) break
+    result = best
+  }
+  if (result === plan) {
+    let bestSaving = 0
+    plan.exercises.forEach((item, index) => {
+      const original = getExercise(item.exerciseId)
+      if (index === 0 || item.sets < 2 || plan.settings.preferredIds.includes(item.exerciseId)
+        || (original.category === 'compound' && !isBodyweightExercise(original))) return
+      const alternatives = getSubstitutions(item, plan.settings, plan.exercises.map((entry) => entry.exerciseId))
+        .filter((exercise) => INTENSITY_ISOLATIONS.has(exercise.id))
+      for (const exercise of alternatives) {
+        const replacement = { ...prescription(exercise, plan.settings, item.sets, true), id: item.id }
+        const conventional = { ...plan, exercises: plan.exercises.map((entry) => entry.id === item.id ? replacement : entry) }
+        const technique: IntensityTechnique = exercise.id.startsWith('db-') ? 'rest-pause' : 'drop-set'
+        if (!intensityOptions(conventional, replacement).includes(technique)) continue
+        const candidate = { ...conventional, exercises: conventional.exercises.map((entry) =>
+          entry.id === item.id ? { ...entry, sets: entry.sets - 1, technique } : entry) }
+        const candidateSeconds = estimatePlanSeconds(candidate)
+        const saving = initialSeconds - candidateSeconds
+        if (saving <= bestSaving || candidateSeconds >= estimatePlanSeconds(conventional)) continue
+        result = candidate
+        bestSaving = saving
+        substitutionNote = `${original.name} sostituito con ${exercise.name}, accessorio stabile per gli stessi gruppi selezionati; il risparmio include anche questa variante. `
+      }
+    })
+  }
+  const saved = initialSeconds - estimatePlanSeconds(result)
+  if (saved <= 0) {
+    return { plan, message: 'Ottimizza il tempo: nessun blocco compatibile offre un risparmio reale con questi vincoli. Piano tradizionale, senza tecniche aggiunte né gruppi eliminati.' }
+  }
+  return {
+    plan: result,
+    message: `Ottimizza il tempo: risparmio stimato di ${saved} secondi rispetto alle serie tradizionali, senza riempire il margine con altro lavoro. `
+      + substitutionNote
+      + 'Al massimo due blocchi; primo esercizio del focus, riscaldamento e priorità conservati. '
+      + 'La mini-serie sostituisce una serie accessoria per risparmiare tempo ma non equivale al suo volume. '
+      + 'Segui pause, RIR e indicazioni sulle schede; conferma la disponibilità degli attrezzi.',
+  }
+}
+
 function uniqueId(prefix: string): string {
   const suffix = globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
   return `${prefix}-${suffix}`
@@ -1052,16 +1291,21 @@ export function generatePlan(
     }
   }
   const items = addUsefulVolume(core, candidates, snapshot, availableSeconds)
-  const plan: WorkoutPlan = {
+  const standardPlan: WorkoutPlan = {
     id: uniqueId('plan'),
     name: `${GOAL_LABELS[snapshot.goal]} · ${snapshot.muscles.map((muscle) => MUSCLE_LABELS[muscle]).join(' e ')}`,
     createdAt: new Date().toISOString(),
     settings: snapshot,
     exercises: items.map((item) => ({
-      ...withProgression(item, snapshot, history), id: uniqueId('exercise'),
+      ...item, id: uniqueId('exercise'),
     })),
     warmupSeconds: WARMUP_SECONDS,
     reserveSeconds: RESERVE_SECONDS,
+  }
+  const optimized = optimizePlanTime(standardPlan)
+  const plan: WorkoutPlan = {
+    ...optimized.plan,
+    exercises: optimized.plan.exercises.map((item) => withProgression(item, snapshot, history)),
   }
   const validation = validatePlan(plan)
   if (validation.length) return { plan: null, message: validation.join(' ') }
@@ -1071,8 +1315,10 @@ export function generatePlan(
     abbreviated
       ? 'Piano abbreviato: volume ridotto a 1–2 serie dove necessario, mantenendo tutti i gruppi e il riscaldamento.'
       : 'Piano pronto: tutti i gruppi selezionati sono coperti, nell’ordine di priorità.',
-    'Il tempo stimato include preparazione, serie di avvicinamento e relativi recuperi, registrazione, cambi esercizio e margine. Nessuna superserie.',
+    'Il tempo stimato include preparazione, serie di avvicinamento e relativi recuperi, registrazione, cambi esercizio e margine.'
+      + (plan.exercises.some((item) => item.supersetGroup) ? '' : ' Nessuna superserie.'),
   ]
+  if (optimized.message) messages.push(optimized.message)
   const budgetNote = planBudgetNote(plan)
   if (budgetNote) messages.push(budgetNote)
   if (snapshot.goal === 'strength' && plan.exercises.some((item) => isBodyweightExercise(getExercise(item.exerciseId)))) {

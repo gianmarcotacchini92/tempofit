@@ -1,9 +1,9 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { ChartNoAxesCombined, TrendingUp } from 'lucide-react'
-import { EXERCISES, getExercise, isBodyweightExercise, needsCsvRepair, setNumber } from './domain'
+import { EXERCISES, getExercise, isBodyweightExercise, needsCsvRepair } from './domain'
 import type { Exercise, WorkoutSession } from './domain'
 import { ExerciseArtwork } from './components'
-import { dateLabel } from './format'
+import { dateLabel, setLabel } from './format'
 import { PROGRESS_METRICS, PROGRESS_RANGES, progressPoints } from './progress'
 import type { ProgressMetric, ProgressPoint, ProgressRange } from './progress'
 
@@ -32,7 +32,7 @@ function InteractiveChart({ points, metric, exerciseName }: { points: ProgressPo
   const y = (value: number) => bottom - value / max * (bottom - top)
   const active = activeIndex === null ? null : points[activeIndex]
   const ticks = [...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1])]
-  const announce = (point: ProgressPoint) => `${dateLabel(point.date)}, serie ${setNumber(point.log)}: ${formatMetric(point.value, metric)} ${option.unit}`
+  const announce = (point: ProgressPoint) => `${dateLabel(point.date)}, ${setLabel(point.log)}: ${formatMetric(point.value, metric)} ${option.unit}`
   function selectPoint(event: { currentTarget: SVGSVGElement; clientX: number }) {
     const rect = event.currentTarget.getBoundingClientRect()
     const position = (event.clientX - rect.left) * width / rect.width
@@ -81,7 +81,7 @@ function InteractiveChart({ points, metric, exerciseName }: { points: ProgressPo
     </div>
     <div className="chart-detail" id={detailId} role="status" aria-live="polite" aria-atomic="true">
       {active ? <>
-        <div className="chart-detail-heading"><div><strong>{dateLabel(active.date)} / Serie {setNumber(active.log)}</strong><span>{active.sessionName}</span></div>
+        <div className="chart-detail-heading"><div><strong>{dateLabel(active.date)} / {setLabel(active.log)}</strong><span>{active.sessionName}</span></div>
           <strong className="chart-detail-value">{formatMetric(active.value, metric)} <small>{option.unit}{metric === 'oneRepMax' ? ' stimati' : ''}</small></strong></div>
         <dl className="chart-set-values"><div><dt>Peso utilizzato</dt><dd>{format(active.log.weight!)} kg</dd></div>
           <div><dt>Ripetizioni</dt><dd>{active.log.reps}</dd></div><div><dt>Volume serie</dt><dd>{format(active.log.weight! * active.log.reps)} kg × rip.</dd></div>
@@ -115,11 +115,12 @@ export function ProgressChart({ history, onInspect }: { history: WorkoutSession[
       <select className="full" aria-label="Esercizio del grafico" value={exercise.id} onChange={(event) => setSelected(event.target.value)}>{tracked.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
       <button className="chart-exercise-preview" onClick={() => onInspect(exercise)} aria-label={`Mostra illustrazione di ${exercise.name}`}><ExerciseArtwork small exercise={exercise} /><span>Vedi illustrazione dell'esercizio</span></button>
       {points.length ? <>
-        <p className="field-help chart-summary">{new Set(points.map((point) => point.sessionId)).size} sessioni / {points.length} {metric === 'oneRepMax' ? 'stime' : metric === 'weight' ? 'carichi massimi' : 'serie'} / {range === 'max' ? 'tutto lo storico' : `ultimi ${PROGRESS_RANGES.find((item) => item.id === range)!.label}`}.<br />
+        <p className="field-help chart-summary">{new Set(points.map((point) => point.sessionId)).size} sessioni / {points.length} {metric === 'oneRepMax' ? 'stime' : metric === 'weight' ? 'carichi massimi' : points.some((point) => point.log.part) ? 'serie e mini-serie' : 'serie'} / {range === 'max' ? 'tutto lo storico' : `ultimi ${PROGRESS_RANGES.find((item) => item.id === range)!.label}`}.<br />
           {metric === 'volume' ? 'Un punto per serie' : 'Un punto per sessione'}, in ordine cronologico; la distanza tra i punti non indica il tempo trascorso.</p>
         <InteractiveChart key={`${exercise.id}-${range}-${metric}`} points={points} metric={metric} exerciseName={exercise.name} />
       </> : <div className="chart-empty"><ChartNoAxesCombined size={36} strokeWidth={1.3} /><h4>Nessun dato per questa selezione.</h4><p>{metric === 'oneRepMax' ? 'Servono serie da 1 a 10 ripetizioni con un carico positivo, su esercizi non a corpo libero.' : 'Nessuna serie con carico registrato nel periodo scelto.'} Prova un altro periodo o una metrica diversa.</p></div>}
       {metric === 'oneRepMax' && <p className="field-help">Stima Epley: peso × (1 + ripetizioni / 30); con una ripetizione si usa il peso registrato. Solo serie da 1 a 10 ripetizioni. RIR non incluso: la stima non e un carico da provare ne una prescrizione.</p>}
+      <p className="field-help">Le mini-serie drop e rest-pause hanno valori separati nel volume e sono escluse dalla stima del massimale.</p>
       {isBodyweightExercise(exercise) && <p className="field-help">Per questo esercizio il peso indica la sola zavorra: il volume non comprende il peso corporeo. Il massimale non viene stimato senza il carico totale.</p>}
       <p className="field-help">Peso e volume usano il carico come registrato, senza raddoppiare manubri o lati. Il carico da solo non misura forza o crescita muscolare.</p>
     </> : <div className="chart-empty"><ChartNoAxesCombined size={36} strokeWidth={1.3} /><h4>Niente numeri inventati.</h4><p>Registra il carico di una serie per iniziare a costruire il tuo grafico.</p></div>}

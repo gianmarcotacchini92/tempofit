@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, EQUIPMENT_LABELS, EXERCISES, GOAL_LABELS, LEVEL_LABELS, MUSCLE_LABELS } from './domain.ts'
+import { DEFAULT_SETTINGS, EQUIPMENT_LABELS, EXERCISES, GOAL_LABELS, LEVEL_LABELS, MUSCLE_LABELS, intensityOptions, supersetCandidates } from './domain.ts'
 import type { WorkoutPlan, WorkoutSession, WorkoutSettings } from './domain.ts'
 
 export const STORAGE_KEY = 'tempofit.local.v1'
@@ -45,10 +45,11 @@ function settings(value: unknown): value is WorkoutSettings {
     && typeof value.equipment === 'string' && Object.hasOwn(EQUIPMENT_LABELS, value.equipment)
     && strings(value.avoidedIds) && strings(value.preferredIds) && strings(value.avoidedPatterns)
     && (value.includeAccessories === undefined || typeof value.includeAccessories === 'boolean')
+    && (value.optimizeTime === undefined || typeof value.optimizeTime === 'boolean')
     && (value.minRestSeconds === undefined || (finite(value.minRestSeconds) && Number.isInteger(value.minRestSeconds) && value.minRestSeconds >= 0 && value.minRestSeconds <= 300))
 }
 
-function plan(value: unknown): value is WorkoutPlan {
+function planShape(value: unknown): value is WorkoutPlan {
   return record(value) && typeof value.id === 'string' && typeof value.name === 'string'
     && date(value.createdAt) && settings(value.settings)
     && finite(value.warmupSeconds) && value.warmupSeconds >= 0 && finite(value.reserveSeconds) && value.reserveSeconds >= 0
@@ -59,7 +60,22 @@ function plan(value: unknown): value is WorkoutPlan {
       && finite(item.repMin) && finite(item.repMax) && finite(item.restSeconds)
       && finite(item.rir) && nullableNumber(item.targetLoad) && (item.targetLoad === null || (finite(item.targetLoad) && item.targetLoad >= 0))
       && (item.progressionNote === undefined || typeof item.progressionNote === 'string')
-      && (item.sourceExerciseName === undefined || typeof item.sourceExerciseName === 'string'))
+      && (item.sourceExerciseName === undefined || typeof item.sourceExerciseName === 'string')
+      && (item.technique === undefined || item.technique === 'drop-set' || item.technique === 'rest-pause')
+      && (item.supersetGroup === undefined || (typeof item.supersetGroup === 'string' && item.supersetGroup.trim().length > 0)))
+}
+
+function plan(value: unknown): value is WorkoutPlan {
+  if (!planShape(value)) return false
+  const workout = value
+  // Do not re-validate old/imported prescriptions against today's programming rules.
+  if (!workout.exercises.some((item) => item.technique !== undefined || item.supersetGroup !== undefined)) return true
+  if (new Set(workout.exercises.map((item) => item.id)).size !== workout.exercises.length) return false
+  const groups = new Set(workout.exercises.filter((item) => item.supersetGroup !== undefined).map((item) => item.supersetGroup))
+  if (groups.size + workout.exercises.filter((item) => item.technique !== undefined).length > 2) return false
+  return workout.exercises.every((item) =>
+    (item.technique === undefined || intensityOptions(workout, item).includes(item.technique))
+    && (item.supersetGroup === undefined || supersetCandidates(workout, item).length === 1))
 }
 
 function session(value: unknown): value is WorkoutSession {
@@ -69,18 +85,31 @@ function session(value: unknown): value is WorkoutSession {
   if (value.importSource !== undefined && (!record(value.importSource) || value.importSource.format !== 'hevy-csv'
     || value.importSource.mappingVersion !== 2 || typeof value.importSource.key !== 'string')) return false
   if (value.plan.exercises.length === 0 || new Set(value.plan.exercises.map((item) => item.id)).size !== value.plan.exercises.length) return false
-  const exerciseIds = new Map(value.plan.exercises.map((item) => [item.id, item.sets]))
+  const exerciseIds = new Map(value.plan.exercises.map((item) => [item.id, item]))
   const seen = new Set<string>()
+  const completedParents = new Map<string, number>()
   return value.logs.every((item: unknown) => {
     if (!record(item) || typeof item.id !== 'string' || typeof item.planExerciseId !== 'string'
       || !finite(item.setIndex) || !Number.isInteger(item.setIndex)
-      || item.setIndex < 0 || item.setIndex >= (exerciseIds.get(item.planExerciseId) ?? 0)
+      || item.setIndex < 0 || item.setIndex >= (exerciseIds.get(item.planExerciseId)?.sets ?? 0)
       || !nullableNumber(item.weight) || (finite(item.weight) && item.weight < 0)
       || !finite(item.reps) || !Number.isInteger(item.reps) || item.reps < 1
       || !nullableNumber(item.rir) || (finite(item.rir) && (item.rir < 0 || item.rir > 10))
       || !date(item.completedAt)) return false
     if (item.sourceSetIndex !== undefined && (!finite(item.sourceSetIndex) || !Number.isInteger(item.sourceSetIndex) || item.sourceSetIndex < 0)) return false
-    const key = `${item.planExerciseId}:${item.setIndex}`
+    if (item.part !== undefined && item.part !== 'drop' && item.part !== 'rest-pause') return false
+    const parentKey = JSON.stringify([item.planExerciseId, item.setIndex])
+    if (item.part !== undefined) {
+      const prescription = exerciseIds.get(item.planExerciseId)!
+      const expected = prescription.technique === 'drop-set' ? 'drop'
+        : prescription.technique === 'rest-pause' ? 'rest-pause' : undefined
+      const parentCompletedAt = completedParents.get(parentKey)
+      if (item.part !== expected || item.setIndex !== prescription.sets - 1 || item.reps > 50
+        || parentCompletedAt === undefined || Date.parse(item.completedAt) < parentCompletedAt) return false
+    } else {
+      completedParents.set(parentKey, Date.parse(item.completedAt))
+    }
+    const key = JSON.stringify([item.planExerciseId, item.setIndex, item.part ?? null])
     if (seen.has(key)) return false
     seen.add(key)
     return true

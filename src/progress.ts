@@ -37,8 +37,8 @@ export function progressStart(range: ProgressRange, now: Date): number {
   return start.getTime()
 }
 
-export function estimatedOneRepMax(exercise: Exercise, log: Pick<SetLog, 'weight' | 'reps'>): number | null {
-  if (isBodyweightExercise(exercise) || log.weight === null || log.weight <= 0 || log.reps > 10) return null
+export function estimatedOneRepMax(exercise: Exercise, log: Pick<SetLog, 'weight' | 'reps' | 'part'>): number | null {
+  if (log.part !== undefined || isBodyweightExercise(exercise) || log.weight === null || log.weight <= 0 || log.reps > 10) return null
   return log.reps === 1 ? log.weight : log.weight * (1 + log.reps / 30)
 }
 
@@ -50,7 +50,7 @@ export function progressPoints(history: WorkoutSession[], exerciseId: string, ra
     .flatMap((session) => {
       const points = session.plan.exercises.filter((item) => item.exerciseId === exerciseId).flatMap((item) =>
         session.logs.filter((log) => log.planExerciseId === item.id && log.weight !== null)
-          .sort((a, b) => a.setIndex - b.setIndex)
+          .sort((a, b) => a.setIndex - b.setIndex || Number(a.part !== undefined) - Number(b.part !== undefined))
           .flatMap((log): ProgressPoint[] => {
             const value = metric === 'oneRepMax' ? estimatedOneRepMax(exercise, log)
               : metric === 'volume' ? log.weight! * log.reps : log.weight

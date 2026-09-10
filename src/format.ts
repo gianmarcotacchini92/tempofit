@@ -7,3 +7,19 @@ export function timeLabel(seconds: number) {
 export function dateLabel(value: string, options?: Intl.DateTimeFormatOptions) {
   return new Date(value).toLocaleDateString('it-IT', options ?? { day: 'numeric', month: 'short', year: 'numeric' })
 }
+import type { SetLog } from './domain'
+
+export function regularSetCount(logs: readonly SetLog[]) {
+  return logs.filter((log) => !log.part).length
+}
+
+export function loggedSetsLabel(logs: readonly SetLog[]) {
+  const regular = regularSetCount(logs)
+  const mini = logs.length - regular
+  return `${regular} serie${mini ? ` + ${mini} mini-serie` : ''}`
+}
+
+export function setLabel(log: Pick<SetLog, 'setIndex' | 'sourceSetIndex' | 'part'>) {
+  const number = (log.sourceSetIndex ?? log.setIndex) + 1
+  return `Serie ${number}${log.part === 'drop' ? ' / Drop set' : log.part === 'rest-pause' ? ' / Rest-pause' : ''}`
+}

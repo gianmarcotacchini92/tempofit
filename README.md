@@ -140,6 +140,41 @@ modificare le impostazioni di sicurezza del sistema.
   le vecchie associazioni CSV da correggere non mostrano immagini fuorvianti.
   Le varianti senza illustrazione e gli errori di caricamento sono segnalati.
 
+## Tecniche per ottimizzare il tempo
+
+Nel configuratore, **Ottimizza il tempo** e facoltativo e disattivato per
+impostazione predefinita. Sulle sedute brevi il generatore puo proporre
+tecniche compatibili, senza applicarle ai fondamentali pesanti del focus:
+drop set (stripping), rest-pause e superserie. Principianti e programmi di
+sola forza mantengono serie tradizionali. Le tecniche non vengono forzate
+quando attrezzatura, movimento o budget non le rendono appropriate.
+
+Drop e rest-pause prevedono una sola mini-serie dopo l'ultima serie
+principale: carico ridotto di circa il 20-25% nel drop, stesso carico nel
+rest-pause. Il piano indica ripetizioni, RIR e breve pausa/cambio del
+carico. Le mini-serie non sono considerate equivalenti a serie complete.
+Le superserie alternano due esercizi adiacenti compatibili, A1/B1/A2/B2,
+con tempo di cambio attrezzo e recupero tra i giri. Occorre avere gli
+attrezzi vicini e disponibili; in caso contrario si puo sciogliere la
+coppia dall'editor.
+
+La matita di un esercizio consente di cambiare tecnica o abbinamento.
+Sostituire o rimuovere un componente, oppure cambiarne il numero di serie,
+scioglie la coppia. Il tempo totale viene ricalcolato e un piano fuori
+budget non puo essere avviato. Le modifiche non riscrivono lo storico.
+
+Carico, ripetizioni e RIR della mini-serie sono registrati separatamente.
+Il timer segue il passaggio effettivo; sessione e timer riprendono dopo
+un ricaricamento. Annullare la serie principale annulla anche la sua
+mini-serie. Nel grafico il volume resta separato per ciascun carico;
+le mini-serie sono escluse dal massimale stimato e dalla progressione
+dei carichi tradizionale. Il conteggio delle serie complete e la
+distribuzione muscolare non sommano le mini-serie come serie intere.
+
+I dati aggiungono campi opzionali (`optimizeTime`, `technique`,
+`supersetGroup`, `part`) senza cambiare la chiave locale o il formato
+dei vecchi CSV. Backup e sessioni preesistenti restano leggibili.
+
 ## Illustrazioni e licenze
 
 Le immagini provengono da [Everkinetic / Greg Priday](https://github.com/everkinetic/data)

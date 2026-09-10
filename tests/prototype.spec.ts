@@ -17,6 +17,28 @@ async function navigate(page: Page, name: string) {
   else await page.locator('.desktop-navigation').getByRole('button', { name, exact: true }).click()
 }
 
+for (const [screen, button] of [
+  ['Panoramica', 'Crea allenamento'],
+  ['Allenamento', 'Crea allenamento'],
+  ['Storico', 'Nuovo workout'],
+  ['Storico', 'Crea il primo allenamento'],
+]) {
+  test(`workout creation from ${screen}: ${button} does not copy the click event`, async ({ page }) => {
+    const errors: string[] = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    await page.goto('/')
+    await navigate(page, screen)
+    await page.getByRole('button', { name: button, exact: true }).click()
+    await expect(page.getByRole('dialog', { name: 'Facciamo spazio al tuo allenamento.' })).toBeVisible()
+    await page.getByRole('button', { name: 'Genera allenamento', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Inizia allenamento', exact: true })).toBeEnabled()
+    expect(errors).toEqual([])
+    const settings = await page.evaluate(() => JSON.parse(localStorage.getItem('tempofit.local.v1')!).draft.settings)
+    expect(settings).not.toHaveProperty('nativeEvent')
+    expect(settings).not.toHaveProperty('currentTarget')
+  })
+}
+
 test('dashboard is original, empty, responsive, and has working navigation', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
