@@ -1,0 +1,48 @@
+// BEGIN TEMPOFIT RULES
+match /tempoFitUsers/{uid} {
+  function tempoFitOwner() {
+    return request.auth != null && request.auth.uid == uid;
+  }
+  function tempoFitManifest() {
+    let data = request.resource.data;
+    return data.keys().hasOnly([
+      'schemaVersion', 'revision', 'state', 'sessions', 'updatedAt'
+    ])
+      && data.schemaVersion is int && data.schemaVersion == 1
+      && data.revision is string
+      && data.revision.matches(
+        '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+      )
+      && data.state is string
+      && data.sessions is list && data.sessions.size() <= 5000
+      && data.state.size() + data.sessions.size() * 64 <= 921600
+      && (data.sessions.size() == 0 || (
+        data.sessions.join(',').matches('^[0-9a-f]{64}(,[0-9a-f]{64})*$')
+        && data.sessions.join(',').split(',') == data.sessions
+      ))
+      && data.updatedAt is timestamp && data.updatedAt == request.time;
+  }
+  allow get: if tempoFitOwner();
+  allow list: if false;
+  allow create: if tempoFitOwner() && tempoFitManifest();
+  allow update: if tempoFitOwner() && tempoFitManifest()
+    && request.resource.data.revision != resource.data.revision;
+  allow delete: if false;
+
+  match /sessions/{hash} {
+    function tempoFitSession() {
+      return hash.matches('^[0-9a-f]{64}$')
+        && request.resource.data.keys().hasOnly(['schemaVersion', 'payload'])
+        && request.resource.data.schemaVersion is int
+        && request.resource.data.schemaVersion == 1
+        && request.resource.data.payload is string
+        && request.resource.data.payload.size() <= 921600;
+    }
+    allow get, list: if tempoFitOwner();
+    allow create: if tempoFitOwner() && tempoFitSession();
+    allow update: if tempoFitOwner() && tempoFitSession()
+      && request.resource.data == resource.data;
+    allow delete: if false;
+  }
+}
+// END TEMPOFIT RULES

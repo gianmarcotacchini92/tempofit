@@ -8,11 +8,51 @@ semplicita dei workout tracker, senza utilizzare marchi, schermate o asset Hevy.
 
 <https://gianmarcotacchini92.github.io/tempofit/>
 
-Il sito funziona senza server locale. I dati di allenamento restano nel browser:
-la pubblicazione del codice non pubblica lo storico personale. Il sito pubblico
-ha un archivio separato da quello su `127.0.0.1`: per trasferire i dati, esportare
-un backup JSON dall'app locale e importarlo nel sito pubblico, su un archivio
-vuoto. Lo stesso vale passando a un altro dispositivo o browser.
+Il sito funziona senza server locale, con accesso Google facoltativo e
+sincronizzazione Firebase. La pubblicazione del codice non pubblica lo storico
+personale. Senza account i dati rimangono nel browser, separati per indirizzo.
+Per trasferirli da un'altra origine si puo collegare lo stesso account Google
+oppure esportare un backup JSON e importarlo in un archivio vuoto.
+
+## Account Google e sincronizzazione
+
+Aprire **Il tuo profilo**, oppure il pulsante del profilo in alto a destra,
+e scegliere **Accedi con Google**. Il progetto Firebase condiviso e `sincro-ai`;
+lo spazio TempoFit e separato dagli altri progetti e dagli altri utenti.
+
+Al primo collegamento, una copia locale con allenamenti, piano, sessione
+o impostazioni personalizzate non viene caricata automaticamente. Scegliere
+**Attiva sincronizzazione di questa copia** se il cloud e vuoto; se contiene
+gia dati, scegliere esplicitamente quale copia utilizzare. Prima di una
+sostituzione viene scaricato un backup della copia sostituita. Non chiudere
+la pagina prima che compaia **Sincronizzato**.
+
+Con lo stesso account su un secondo dispositivo vuoto, la copia Firebase
+viene recuperata automaticamente. Si sincronizzano storico, serie, carichi,
+impostazioni, piano, sessione attiva e scadenza del timer. Aggiunte indipendenti
+allo storico si uniscono; modifiche concorrenti della stessa seduta o della
+sessione in corso richiedono una scelta, senza sovrascrittura automatica.
+Il timer scade allo stesso istante sui dispositivi: non riparte dalla durata
+iniziale.
+
+Una pagina gia caricata continua a salvare localmente senza rete. Al ritorno
+della connessione rilegge prima il cloud e poi riconcilia le modifiche. Ogni
+account ha una copia browser distinta; uscire ripristina lo spazio senza account,
+non trasferisce i dati al prossimo utente e non cancella modifiche pendenti.
+Per inviarle, riaccedere allo stesso account nello stesso browser. In caso di
+salvataggio locale bloccato, il pulsante di uscita esporta prima la copia corrente.
+Le copie locali non sono cifrate: su un dispositivo condiviso usare un profilo
+browser personale. L'autorizzazione Firebase protegge l'accesso al cloud, non
+la memoria di un browser gia accessibile.
+
+Un errore di salvataggio blocca l'accesso iniziale finche non si protegge la
+copia in memoria. Se Google cambia account da un'altra scheda durante il blocco,
+il passaggio viene sospeso: **Esporta copia e completa cambio account** conserva
+prima un backup. Anche le importazioni ancora in lettura vengono annullate se
+nel frattempo il cloud o un'altra scheda modificano l'archivio.
+
+La sincronizzazione non sostituisce il backup JSON. Il ripristino dell'archivio
+senza account e disponibile dopo l'uscita e non elimina i dati Firebase.
 
 ## Pubblicazione su GitHub Pages
 
@@ -209,13 +249,14 @@ L'ordine originario fra bicipiti e tricipiti non e ricostruibile: ricontrollare
 il focus nella configurazione. ID, nomi storici, serie, carichi, registrazioni
 e timer restano invariati; le serie non vengono duplicate. I piani gia salvati
 non vengono riscritti dal generatore: rigenerarli per applicare le nuove priorita.
-Non esistono account, backend, sincronizzazione cloud o chiamate a un LLM.
+L'accesso Google e facoltativo; non vengono effettuate chiamate a un LLM.
 Lo storico iniziale e vuoto: nessuna prestazione dimostrativa viene mescolata
 con i dati dell'utente.
 
 Il salvataggio e specifico del browser e dell'origine: `localhost` e `127.0.0.1`,
-cosi come porte differenti, hanno archivi separati. Cancellare i dati del sito
-elimina anche lo storico. Esportare periodicamente un backup dal profilo.
+cosi come porte differenti, hanno archivi separati. Cancellare i dati del sito elimina la copia locale e le modifiche non ancora
+sincronizzate, non la copia gia pubblicata nel proprio account Firebase.
+Esportare periodicamente un backup dal profilo.
 L'importazione JSON o CSV richiede un archivio vuoto per evitare sovrascritture,
 eccetto la procedura guidata di correzione dei vecchi import CSV. Fino alla
 correzione queste sedute restano esportabili e consultabili con un avviso,
@@ -225,7 +266,8 @@ Modifiche rilevate da un'altra scheda bloccano le nuove scritture finche non si
 ricarica la pagina. Dati corrotti non vengono sovrascritti automaticamente.
 
 Gli asset grafici e i font DM Sans e Manrope sono inclusi localmente.
-L'app non effettua richieste a servizi di terze parti.
+Accesso e sincronizzazione usano Google Authentication e Cloud Firestore.
+Nessun archivio viene inviato prima del collegamento esplicito.
 Una pagina gia aperta salva senza rete, ma non e presente un service worker:
 il primo caricamento e il reload richiedono la rete sul sito pubblico, oppure
 il server locale durante lo sviluppo.
@@ -254,11 +296,52 @@ doloroso e rivolgersi a un professionista qualificato quando necessario.
 |---|---|
 | `src\domain.ts` | Catalogo, vincoli, generatore, tempi, sostituzioni, carichi |
 | `src\storage.ts` | Schema locale, lettura protetta e backup |
+| `src\accountStorage.ts` | Copie browser separate per account, controlli e baseline compatta |
+| `src\useCloudWorkspace.ts` | Cambio account, persistenza locale e integrazione React |
+| `src\cloudModel.ts` / `src\cloudSync.ts` | Merge a tre vie, conflitti, retry e protezione da risposte obsolete |
+| `src\cloudPayload.ts` / `src\firebaseClient.ts` | Manifesto, sedute immutabili, Google Auth e transazioni Firestore |
 | `src\App.tsx` | Navigazione, stato persistente e ciclo della sessione |
 | `src\Configurator.tsx` | Input, priorita e preferenze |
 | `src\Workout.tsx` | Editor, serie effettive e timer |
 | `src\Screens.tsx` | Dashboard, catalogo, storico e progressi |
 | `src\components.tsx` | Dialog accessibili e illustrazioni SVG originali |
+
+### Archiviazione Firebase
+
+La configurazione browser pubblica e in `src\firebaseConfig.ts`: non contiene
+chiavi amministrative. L'accesso ai dati dipende dalle regole Firebase, non
+dalla segretezza della configurazione web.
+
+Il manifesto `/tempoFitUsers/{uid}` contiene configurazione, revisione e lista
+dei documenti delle sedute. Ogni seduta e un documento immutabile
+`/tempoFitUsers/{uid}/sessions/{sha256}`. Questo evita il limite di 1 MiB per
+un unico archivio, gia insufficiente per lo storico importato. Si inviano solo
+le sedute nuove o modificate, poi una transazione pubblica il manifesto solo
+se la revisione attesa e ancora corrente. I documenti non referenziati non
+vengono letti come allenamenti; non e prevista cancellazione automatica.
+Il client impone 900 KiB per documento e 5.000 sedute per manifesto. Limiti
+di spazio browser e quote Firestore vengono segnalati, senza tagliare lo storico.
+
+Le regole in `firebase\tempofit.rules.fragment` sono un **frammento**, non
+l'intero ruleset del progetto condiviso. Non distribuirle da sole con
+`firebase deploy`: cancellerebbero le regole delle altre applicazioni.
+Usare il helper `scripts\deploy-firebase-rules.mjs`, che conserva il ruleset
+esistente, controlla gli accessi e richiede l'applicazione esplicita.
+Non registrare nei commit credenziali Firebase CLI, token OAuth o regole
+private degli altri progetti.
+
+Il helper richiede Firebase CLI **15.29.0** gia autenticata e disponibile nella
+cache npm. Non cambia account o autorizzazioni degli altri progetti.
+
+```powershell
+npm.cmd exec --offline --package=firebase-tools -- node scripts\deploy-firebase-rules.mjs --dry-run
+npm.cmd exec --offline --package=firebase-tools -- node scripts\deploy-firebase-rules.mjs --apply
+```
+
+Il dry-run non pubblica regole. Apply esegue nuovamente i controlli, conserva
+le regole esistenti e si ferma se la release cambia durante la preparazione.
+L'API Firebase non offre un aggiornamento condizionale atomico delle release:
+coordinare quindi eventuali deploy contemporanei delle altre applicazioni.
 
 ## Comandi di sviluppo
 
