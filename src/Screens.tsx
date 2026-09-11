@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowRight, ArrowUpRight, CalendarDays, ChartNoAxesCombined, Check, ChevronRight, Clock3, Dumbbell, Flame, MoveUpRight, Plus, Search, Sparkles, Target, TrendingUp, Zap } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, BookmarkPlus, CalendarDays, ChartNoAxesCombined, Check, ChevronRight, Clock3, Dumbbell, Flame, MoveUpRight, Plus, Search, Sparkles, Target, TrendingUp, Zap } from 'lucide-react'
 import { EXERCISES, EQUIPMENT_LABELS, GOAL_LABELS, MUSCLE_LABELS, getExercise, needsCsvRepair, workoutSetSteps } from './domain'
 import type { Equipment, Exercise, Muscle, WorkoutSession, WorkoutSettings } from './domain'
 import { ExerciseArtwork, ExerciseIllustration, HeroArtwork } from './components'
@@ -18,8 +18,9 @@ function sessionMinutes(session: WorkoutSession) {
   return session.finishedAt === null ? 0 : Math.max(0, Math.round((Date.parse(session.finishedAt) - Date.parse(session.startedAt)) / 60000))
 }
 
-export function Dashboard({ history, active, onCreate, onHistory, onResume }: {
+export function Dashboard({ history, active, onCreate, onHistory, onResume, onRoutines, routineCount = 0 }: {
   history: WorkoutSession[]; active: WorkoutSession | null; onCreate: (preset?: Partial<WorkoutSettings>) => void; onHistory: () => void; onResume: () => void
+  onRoutines?: () => void; routineCount?: number
 }) {
   const weekStart = startOfWeek()
   const weekSessions = history.filter((session) => Date.parse(session.startedAt) >= weekStart.getTime())
@@ -31,6 +32,7 @@ export function Dashboard({ history, active, onCreate, onHistory, onResume }: {
     <div className="dashboard-top">
       <section className="hero-card"><div className="hero-copy"><span className="hero-kicker"><span /> IL TUO PROSSIMO ALLENAMENTO</span><h2>Il tuo tempo.<br />Il tuo <span>allenamento.</span></h2><p>Tu scegli i minuti e i muscoli.<br />Noi mettiamo tutto al posto giusto.</p>
         <button className="button primary" onClick={() => active ? onResume() : onCreate()}><Plus size={19} />{active ? 'Riprendi allenamento' : 'Crea allenamento'}<ArrowUpRight size={19} /></button>
+        {onRoutines && routineCount > 0 && <div className="routine-entry-action"><button className="button secondary compact" onClick={onRoutines}><BookmarkPlus size={16} /> Le mie routine ({routineCount})</button></div>}
         <span className="hero-footnote"><Sparkles size={13} /> Personalizzato. Realistico. Pronto per te.</span>
       </div><HeroArtwork /></section>
       <section className="panel week-card"><div className="section-heading compact-heading"><h3>La tua settimana</h3><span className="small-icon"><CalendarDays size={17} /></span></div><div className="week-big"><strong>{weekSessions.length}</strong><span>allenamenti completati</span></div>
@@ -88,7 +90,7 @@ export function ExerciseLibrary({ equipment, onInspect }: { equipment: Equipment
   </>
 }
 
-export function History({ history, onCreate, onInspect }: { history: WorkoutSession[]; onCreate: () => void; onInspect: (exercise: Exercise) => void }) {
+export function History({ history, onCreate, onInspect, onSaveRoutine }: { history: WorkoutSession[]; onCreate: () => void; onInspect: (exercise: Exercise) => void; onSaveRoutine?: (session: WorkoutSession) => void }) {
   return <><div className="page-heading"><div><span className="eyebrow">IL LAVORO RESTA</span><h1>Il tuo percorso<span className="accent">.</span></h1><p>Sessioni reali. Anche quelle piu brevi del previsto.</p></div><button className="button primary compact" onClick={onCreate}><Plus size={18} /> Nuovo workout</button></div>
     {history.length === 0 ? <div className="panel empty-state"><CalendarDays size={36} strokeWidth={1.5} /><h2>Il primo capitolo e da scrivere.</h2><p>Qui ritroverai serie, ripetizioni e carichi di ogni allenamento salvato.</p><button className="button primary" onClick={onCreate}>Crea il primo allenamento <ArrowRight size={17} /></button></div>
       : <div className="history-list">{history.slice().sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt)).map((session) => {
@@ -102,7 +104,7 @@ export function History({ history, onCreate, onInspect }: { history: WorkoutSess
             return <div className="history-exercise" key={item.id}><div className="history-exercise-heading"><button className="exercise-image-button" aria-label={`Mostra illustrazione di ${exercise.name}`} disabled={unverified} onClick={() => onInspect(exercise)}><ExerciseArtwork small exercise={unverified ? undefined : exercise} /></button><h4>{unverified ? 'Associazione da correggere: ' : ''}{exercise.name}</h4></div>
               {!unverified && <TechniqueNote item={item} plan={session.plan} />}
               {item.sourceExerciseName && <p className="muted">Nome nel CSV: {item.sourceExerciseName}</p>}{logs.length ? logs.map((log) => <p key={log.id}><span>{setLabel(log)}</span><strong>{log.weight === null ? 'Carico non registrato' : `${log.weight} kg`} / {log.reps} rip.</strong><span>{log.rir === null ? 'RIR --' : `RIR ${log.rir}`}</span></p>) : <p className="muted">Non eseguito</p>}</div>
-          })}</div>
+          })}{onSaveRoutine && <button className="button secondary compact history-routine-action" disabled={needsCsvRepair(session) || !session.logs.some((log) => !log.part)} onClick={() => onSaveRoutine(session)}><BookmarkPlus size={16} /> Salva questa seduta come routine</button>}</div>
         </details>
       })}</div>}
   </>
@@ -129,8 +131,8 @@ export function Progress({ history, onInspect }: { history: WorkoutSession[]; on
   </>
 }
 
-export function NoWorkout({ onCreate }: { onCreate: () => void }) {
-  return <><div className="page-heading"><div><span className="eyebrow">SI PARTE DA TE</span><h1>Il prossimo passo<span className="accent">.</span></h1><p>Un piano chiaro, prima della prima ripetizione.</p></div></div><div className="panel empty-state"><span className="empty-icon large"><Dumbbell size={38} /></span><h2>Quanto tempo hai oggi?</h2><p>Scegli minuti, muscoli e obiettivo.<br />Al resto pensiamo con regole chiare e recuperi realistici.</p><button className="button primary" onClick={onCreate}><Sparkles size={18} /> Crea allenamento <ArrowRight size={18} /></button></div></>
+export function NoWorkout({ onCreate, onRoutines }: { onCreate: () => void; onRoutines?: () => void }) {
+  return <><div className="page-heading"><div><span className="eyebrow">SI PARTE DA TE</span><h1>Il prossimo passo<span className="accent">.</span></h1><p>Un piano chiaro, prima della prima ripetizione.</p></div></div><div className="panel empty-state"><span className="empty-icon large"><Dumbbell size={38} /></span><h2>Quanto tempo hai oggi?</h2><p>Scegli minuti, muscoli e obiettivo.<br />Al resto pensiamo con regole chiare e recuperi realistici.</p><button className="button primary" onClick={onCreate}><Sparkles size={18} /> Crea allenamento <ArrowRight size={18} /></button>{onRoutines && <div className="routine-entry-action"><button className="button secondary" onClick={onRoutines}><BookmarkPlus size={17} /> Scegli una routine salvata</button></div>}</div></>
 }
 
 export function ExerciseDetail({ exercise }: { exercise: Exercise }) {

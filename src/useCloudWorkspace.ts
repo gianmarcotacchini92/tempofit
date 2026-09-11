@@ -280,6 +280,7 @@ export function useCloudWorkspace(factory: CloudClientFactory = lazyFirebase) {
     useLocal: () => session.current?.chooseLocal(),
     useRemote: () => session.current?.chooseRemote(),
     original: () => localStorage.getItem(current.current.identity ? accountStorageKey(current.current.identity.uid) : STORAGE_KEY),
+    currentData: () => current.current.data,
     token: () => epoch.current,
     isCurrentToken: (token: number) => mounted.current && token === epoch.current && !current.current.busy && !current.current.accountChangePending,
     isCurrentData: (data: AppData) => current.current.data === data && !current.current.storageChanged,

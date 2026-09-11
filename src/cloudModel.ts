@@ -89,6 +89,7 @@ export function sameAppData(a: AppData | null, b: AppData | null): boolean {
 
 export function hasLocalWork(data: AppData): boolean {
   return data.history.length > 0 || data.active !== null || data.draft !== null || data.restEndsAt !== null
+    || data.routines.length > 0
     || canonicalJson(data.settings) !== canonicalJson(emptyData().settings)
 }
 
@@ -119,7 +120,7 @@ export function parseCloudBaseline(value: unknown): CloudBaseline | null {
       return parsed.head === null && parsed.sessions.length === 0 ? { revision: null, head: null, sessions: [] } : null
     }
     if (typeof parsed.revision !== 'string' || !revisionPattern.test(parsed.revision)
-      || !record(parsed.head) || parsed.head.version !== 2 || Object.hasOwn(parsed.head, 'history')) return null
+      || !record(parsed.head) || (parsed.head.version !== 2 && parsed.head.version !== 3) || Object.hasOwn(parsed.head, 'history')) return null
     const head = cloudHead(parseCloudData({ ...parsed.head, history: [] }))
     const sessions: CloudBaseline['sessions'] = []
     const ids = new Set<string>()

@@ -257,7 +257,7 @@ for (const source of ['local storage', 'import']) {
     }
     await expect(page.locator('.set-complete')).toHaveCount(legacy.active.logs.length)
     const migrated = await page.evaluate(() => JSON.parse(localStorage.getItem('tempofit.local.v1')!))
-    expect(migrated.version).toBe(2)
+    expect(migrated.version).toBe(3)
     expect(migrated.settings.muscles).toEqual(['biceps', 'triceps', 'legs'])
     expect(migrated.draft.settings.muscles).toEqual(['biceps', 'triceps', 'legs'])
     expect(migrated.active.plan.settings.muscles).toEqual(['biceps', 'triceps', 'legs'])

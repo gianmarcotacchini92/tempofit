@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { emptyData } from './storage.ts'
+import { blankRoutine, recoverHistoryRoutines } from './routines.ts'
 import {
   baselineFor, canonicalJson, cloudHead, CloudConflictError, hashPayload, hasLocalWork,
   mergeCloudData, parseCloudBaseline, parseCloudData, sameAppData,
@@ -78,7 +79,7 @@ test('parsing preserves every historical fact and legacy CSV trust markers witho
 
 test('invalid history, duplicate IDs, unknown schemas never become an empty workspace', () => {
   for (const invalid of [
-    data('same', 'same'), { ...data('valid'), version: 3 },
+    data('same', 'same'), { ...data('valid'), version: 4 },
     { ...data('valid'), history: [session('good'), { id: 'broken' }] },
     { ...emptyData(), version: '2' }, null, {},
   ]) assert.throws(() => parseCloudData(invalid))
@@ -86,7 +87,7 @@ test('invalid history, duplicate IDs, unknown schemas never become an empty work
   legacy.version = 1
   legacy.settings.muscles = ['arms']
   const migrated = parseCloudData(legacy)
-  assert.equal(migrated.version, 2)
+  assert.equal(migrated.version, 3)
   assert.deepEqual(migrated.settings.muscles, ['biceps', 'triceps'])
   assert.deepEqual(migrated.history, legacy.history)
   assert.equal(legacy.version, 1)
@@ -137,7 +138,7 @@ test('baseline validation rejects corrupt metadata, duplicates, invalid head and
   for (const invalid of [
     {}, null, { ...baseline, revision: 'bad' }, { ...baseline, revision: null },
     { ...baseline, head: { ...baseline.head, history: [] } },
-    { ...baseline, head: { ...baseline.head, version: 3 } },
+    { ...baseline, head: { ...baseline.head, version: 4 } },
     { ...baseline, head: { ...baseline.head, active: {} } },
     { ...baseline, head: null }, { ...baseline, sessions: [...baseline.sessions, baseline.sessions[0]] },
     { ...baseline, sessions: [{ id: 'x', hash: '0'.repeat(63) }] },
@@ -229,4 +230,56 @@ test('CAS error carries the latest snapshot without changing it', () => {
   assert.ok(error instanceof Error)
   assert.equal(error.latest, latest)
   assert.equal(error.name, 'CloudConflictError')
+})
+
+test('old head2 baselines upgrade without extracting routines or changing compact session hashes', async () => {
+  const original = data('old')
+  const baseline = await baselineFor(snapshot(original))
+  baseline.head.version = 2
+  delete baseline.head.routines
+  delete baseline.head.routineHistoryInitialized
+  const before = structuredClone(baseline)
+  const parsed = parseCloudBaseline(baseline)
+  assert.equal(parsed.head.version, 3)
+  assert.deepEqual(parsed.head.routines, [])
+  assert.equal(parsed.head.routineHistoryInitialized, false)
+  assert.deepEqual(parsed.sessions, before.sessions)
+  assert.deepEqual(baseline, before)
+  assert.deepEqual(parseCloudBaseline(parsed), parsed)
+  const legacy = { ...before.head, history: original.history }
+  const migrated = parseCloudData(legacy)
+  const merged = await mergeCloudData(before, migrated, migrated)
+  assert.deepEqual(merged.conflicts, [])
+  assert.deepEqual(merged.data, migrated)
+  assert.deepEqual(merged.data.history, original.history)
+  assert.equal(parseCloudBaseline({ ...baseline, head: { ...baseline.head, version: 1 } }), null)
+})
+
+test('real routine drafts are local work, initialization metadata alone is not', () => {
+  const original = emptyData()
+  assert.equal(hasLocalWork({ ...original, routineHistoryInitialized: false }), false)
+  assert.equal(hasLocalWork({ ...original, routines: [blankRoutine(original.settings)] }), true)
+  assert.equal(sameAppData(original, { ...original, routineHistoryInitialized: false }), false)
+  assert.equal(sameAppData(original, { ...original, routines: [blankRoutine(original.settings)] }), false)
+})
+
+test('routine additions, edits and deletes remain atomic head changes through cloud merges', async () => {
+  const original = recoverHistoryRoutines(data('source')).data
+  const baseline = await baselineFor(snapshot(original))
+  const local = structuredClone(original)
+  local.routines[0].name = 'Edited template'
+  local.routines[0].plan.exercises[0].sets = 2
+  const remote = { ...structuredClone(original), history: [...original.history, session('other')] }
+  const merged = await mergeCloudData(baseline, local, remote)
+  assert.deepEqual(merged.conflicts, [])
+  assert.deepEqual(merged.data.routines, local.routines)
+  assert.equal(merged.data.history.length, 2)
+  remote.routines[0].name = 'Competing edit'
+  assert.deepEqual(await mergeCloudData(baseline, local, remote), { data: null, conflicts: ['head'] })
+  const deleted = { ...original, routines: [] }
+  assert.deepEqual((await mergeCloudData(baseline, deleted, original)).data.routines, [])
+  assert.deepEqual((await mergeCloudData(baseline, deleted, local)).conflicts, ['head'])
+  const base = await baselineFor(snapshot(emptyData()))
+  const recovered = recoverHistoryRoutines({ ...emptyData(), history: original.history }).data
+  assert.deepEqual((await mergeCloudData(base, recovered, structuredClone(recovered))).data, recovered)
 })

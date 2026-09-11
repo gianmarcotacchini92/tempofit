@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { DEFAULT_SETTINGS, generatePlan } from './domain.ts'
 import { decodeData, emptyData, isAppData, loadData, STORAGE_KEY } from './storage.ts'
+import { blankRoutine, routineFromPlan } from './routines.ts'
 
 function dataWithSession() {
   const { plan } = generatePlan(DEFAULT_SETTINGS)
@@ -78,6 +79,8 @@ test('malformed storage is reported and never overwritten', () => {
 function legacyData() {
   const data = dataWithSession()
   data.version = 1
+  delete data.routines
+  delete data.routineHistoryInitialized
   data.draft = structuredClone(data.active.plan)
   data.history = [{ ...structuredClone(data.active), id: 'finished-session', finishedAt: new Date().toISOString() }]
   data.settings.muscles = ['back', 'arms', 'glutes', 'legs']
@@ -97,7 +100,10 @@ test('v1 migration deduplicates anatomy in order, preserving original sessions, 
   const decoded = decodeData(legacy)
   assert.ok(decoded?.migrated)
   const { data } = decoded
-  assert.equal(data.version, 2)
+  assert.equal(data.version, 3)
+  assert.deepEqual(data.routines, [])
+  assert.equal(data.routineHistoryInitialized, false)
+  assert.equal(decoded.schemaUpgraded, true)
   assert.deepEqual(data.settings.muscles, ['back', 'biceps', 'triceps', 'legs'])
   assert.deepEqual(data.draft.settings.muscles, ['biceps', 'triceps', 'chest'])
   assert.deepEqual(data.active.plan.settings.muscles, ['legs', 'biceps', 'triceps'])
@@ -137,11 +143,75 @@ test('storage loading and imports use the same migration; invalid legacy backups
   for (const change of [
     (data) => { data.settings.muscles.push('unknown-muscle') },
     (data) => { data.history[0].plan.exercises[0].exerciseId = 'unknown' },
-    (data) => { data.version = 3 },
+    (data) => { data.version = 4 },
     (data) => { data.draft.exercises[0].progressionNote = 42 },
   ]) {
     const data = legacyData()
     change(data)
     assert.equal(decodeData(data), null)
+  }
+})
+
+test('v2 schema upgrade is pure, preserves the entire workspace, and has no anatomy notice', () => {
+  const legacy = dataWithSession()
+  legacy.version = 2
+  delete legacy.routines
+  delete legacy.routineHistoryInitialized
+  legacy.draft = structuredClone(legacy.active.plan)
+  legacy.history = [{ ...structuredClone(legacy.active), id: 'past', finishedAt: new Date().toISOString() }]
+  const before = structuredClone(legacy)
+  const decoded = decodeData(legacy)
+  assert.equal(decoded.migrated, false)
+  assert.equal(decoded.schemaUpgraded, true)
+  assert.deepEqual(decoded.data, { ...before, version: 3, routines: [], routineHistoryInitialized: false })
+  assert.deepEqual(legacy, before)
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
+    getItem() { return JSON.stringify(legacy) },
+    setItem() { assert.fail('Loading must not write') },
+  } })
+  try {
+    assert.equal(loadData().notice, undefined)
+    assert.equal(loadData().error, null)
+  } finally { delete globalThis.localStorage }
+})
+
+test('schema3 stores empty routine drafts and invalid programming without allowing a corrupt shape', () => {
+  const data = emptyData()
+  assert.equal(data.version, 3)
+  assert.equal(data.routineHistoryInitialized, true)
+  data.routines = [blankRoutine(data.settings)]
+  assert.equal(isAppData(data), true)
+  const populated = dataWithSession()
+  populated.routines = [routineFromPlan(populated.active.plan)]
+  populated.routines[0].plan.exercises[0].restSeconds = 30
+  assert.equal(isAppData(populated), true, 'An unsafe rest can be saved for editing, not started')
+  assert.deepEqual(decodeData(JSON.parse(JSON.stringify(populated))), { data: populated, migrated: false })
+  for (const corrupt of [
+    (copy) => { delete copy.routines },
+    (copy) => { delete copy.routineHistoryInitialized },
+    (copy) => { copy.routineHistoryInitialized = 1 },
+    (copy) => { copy.routines = null },
+    (copy) => { copy.routines[0].id = '' },
+    (copy) => { copy.routines.push(structuredClone(copy.routines[0])) },
+    (copy) => { copy.routines[0].name = ' ' },
+    (copy) => { copy.routines[0].source = 'unknown' },
+    (copy) => { copy.routines[0].refreshLoads = 'yes' },
+    (copy) => { copy.routines[0].createdAt = 'broken' },
+    (copy) => { copy.routines[0].updatedAt = '2000-01-01' },
+    (copy) => { copy.routines[0].historyKey = 1 },
+    (copy) => { copy.routines[0].sourceSessionId = [] },
+    (copy) => { copy.routines[0].plan.exercises[0].exerciseId = 'unknown' },
+    (copy) => { copy.routines[0].plan.exercises[0].targetLoad = Infinity },
+    (copy) => { copy.routines[0].plan.exercises.push(structuredClone(copy.routines[0].plan.exercises[0])) },
+    (copy) => { copy.routines[0].plan.kind = 'automatic' },
+    (copy) => { copy.routines[0].plan.routineId = 1 },
+    (copy) => { copy.active.plan.kind = 'automatic' },
+    (copy) => { copy.draft = { ...copy.active.plan, routineId: '' } },
+    (copy) => { copy.version = 4 },
+  ]) {
+    const copy = structuredClone(populated)
+    corrupt(copy)
+    assert.equal(isAppData(copy), false)
+    assert.equal(decodeData(copy), null)
   }
 })

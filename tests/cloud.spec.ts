@@ -5,6 +5,7 @@ import { DEFAULT_SETTINGS, generatePlan } from '../src/domain'
 import { emptyData } from '../src/storage'
 import type { AppData } from '../src/storage'
 import type { CloudSnapshot } from '../src/cloudModel'
+import { routineFromPlan } from '../src/routines'
 
 class Backend {
   snapshots = new Map<string, CloudSnapshot>()
@@ -352,5 +353,84 @@ test('failed guest writes block login and an external auth switch waits for a re
   if (!file) throw new Error('Missing protected guest export')
   expect(JSON.parse(await readFile(file, 'utf8')).active.logs[0].weight).toBe(75)
   await expect.poll(async () => (await local(page, 'b'))?.active?.logs.length).toBe(0)
+  expect(backend.writes).toHaveLength(0)
+})
+
+test('routine-only work requires linking consent and then synchronizes to another device', async ({ page, context, browser }) => {
+  const backend = new Backend()
+  backend.snapshots.set('a', { revision: crypto.randomUUID(), data: emptyData() })
+  await backend.connect(context)
+  const localData = emptyData()
+  localData.routines = [routineFromPlan(withActive().active!.plan)]
+  localData.routines[0].name = 'Routine senza sedute'
+  localData.routines[0].plan.name = localData.routines[0].name
+  await seed(page, localData)
+  await page.goto('/tests/fixtures/cloud.html')
+  await login(page)
+  await expect(page.locator('.cloud-choices')).toContainText('1 routine')
+  expect(backend.writes).toHaveLength(0)
+  await page.getByRole('button', { name: 'Usa questa copia per il cloud', exact: true }).click()
+  await page.getByRole('button', { name: 'Esporta backup e conferma' }).click()
+  await expect(page.locator('.cloud-synced')).toBeVisible()
+  const other = await browser.newContext()
+  try {
+    await backend.connect(other)
+    const second = await other.newPage()
+    await second.goto('http://127.0.0.1:5173/tests/fixtures/cloud.html')
+    await login(second)
+    await expect(second.locator('.cloud-synced')).toBeVisible()
+    expect((await local(second))?.routines).toEqual(localData.routines)
+    expect((await local(second))?.history).toEqual([])
+  } finally { await other.close() }
+})
+
+test('saving an open routine editor cannot overwrite a newer version from the same account', async ({ page, context }) => {
+  const backend = new Backend()
+  const cloud = emptyData()
+  cloud.routines = [routineFromPlan(withActive().active!.plan)]
+  cloud.routines[0].name = 'Routine originale'
+  cloud.routines[0].plan.name = cloud.routines[0].name
+  backend.snapshots.set('a', { revision: crypto.randomUUID(), data: cloud })
+  await backend.connect(context)
+  await page.goto('/tests/fixtures/cloud.html')
+  await login(page)
+  await expect(page.locator('.cloud-synced')).toBeVisible()
+  await closeAccount(page)
+  const mobile = page.locator('.mobile-navigation')
+  await (await mobile.isVisible() ? mobile : page.locator('.desktop-navigation')).getByRole('button', { name: 'Routine', exact: true }).click()
+  await page.getByRole('button', { name: 'Modifica', exact: true }).click()
+  await page.getByRole('textbox', { name: 'Nome routine' }).fill('Modifica locale')
+  const remote = structuredClone(cloud)
+  remote.routines[0].name = 'Modifica remota'
+  remote.routines[0].plan.name = remote.routines[0].name
+  remote.routines[0].updatedAt = new Date(Date.now() + 1).toISOString()
+  backend.snapshots.set('a', { revision: crypto.randomUUID(), data: remote })
+  await expect.poll(async () => (await local(page))?.routines[0].name).toBe('Modifica remota')
+  await page.getByRole('button', { name: 'Salva routine', exact: true }).click()
+  await expect(page.getByText(/La routine e cambiata su un altro dispositivo/)).toBeVisible()
+  expect(backend.writes).toHaveLength(0)
+  expect((await local(page))?.routines[0].name).toBe('Modifica remota')
+})
+
+test('a routine session changed remotely cannot be overwritten by an old exercise dialog', async ({ page, context }) => {
+  const backend = new Backend()
+  const data = emptyData()
+  data.draft = withActive().active!.plan
+  data.draft.kind = 'routine'
+  backend.snapshots.set('a', { revision: crypto.randomUUID(), data })
+  await backend.connect(context)
+  await page.goto('/tests/fixtures/cloud.html')
+  await login(page)
+  await expect(page.locator('.cloud-synced')).toBeVisible()
+  await closeAccount(page)
+  const mobile = page.locator('.mobile-navigation')
+  await (await mobile.isVisible() ? mobile : page.locator('.desktop-navigation')).getByRole('button', { name: 'Allenamento', exact: true }).click()
+  await page.getByRole('button', { name: /^Modifica / }).first().click()
+  const remote = structuredClone(data)
+  remote.draft!.exercises[0].restSeconds += 30
+  backend.snapshots.set('a', { revision: crypto.randomUUID(), data: remote })
+  await expect.poll(async () => (await local(page))?.draft?.exercises[0].restSeconds).toBe(remote.draft!.exercises[0].restSeconds)
+  await page.getByRole('button', { name: 'Salva modifiche', exact: true }).click()
+  await expect(page.getByText(/Il piano e cambiato mentre lo modificavi/)).toBeVisible()
   expect(backend.writes).toHaveLength(0)
 })

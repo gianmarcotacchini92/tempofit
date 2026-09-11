@@ -374,6 +374,8 @@ export interface PlanExercise {
 export interface WorkoutPlan {
   id: string
   name: string
+  kind?: 'routine'
+  routineId?: string
   createdAt: string
   settings: WorkoutSettings
   exercises: PlanExercise[]
@@ -423,6 +425,8 @@ const TRANSITION_SECONDS = 45
 const LOG_SECONDS = 12
 const MAX_EXERCISES: Record<Level, number> = { beginner: 6, intermediate: 8, advanced: 8 }
 export const MAX_SETS: Record<Level, number> = { beginner: 3, intermediate: 4, advanced: 5 }
+export const MAX_PRESCRIPTION_SETS = 12
+export const MAX_PLAN_EXERCISES = 30
 const MAX_TOTAL_SETS: Record<Level, number> = { beginner: 12, intermediate: 21, advanced: 24 }
 const exerciseById = new Map(EXERCISES.map((exercise) => [exercise.id, exercise]))
 
@@ -515,7 +519,7 @@ export function minimumRestSeconds(item: PlanExercise): number {
 }
 
 function validPrescription(item: PlanExercise): boolean {
-  return !!item && integerBetween(item.sets, 1, 20)
+  return !!item && integerBetween(item.sets, 1, MAX_PRESCRIPTION_SETS)
     && integerBetween(item.repMin, 1, 50) && integerBetween(item.repMax, item.repMin, 50)
     && integerBetween(item.restSeconds, 30, 300) && finite(item.rir) && item.rir >= 0 && item.rir <= 5
     && (item.targetLoad === null || (finite(item.targetLoad) && item.targetLoad > 0))
@@ -543,7 +547,7 @@ function advancedEligible(plan: WorkoutPlan, item: PlanExercise): boolean {
     || !plan.exercises.some((entry) => entry.id === item?.id) || !validPrescription(item)
     || item.repMin < 8 || item.repMax < 10 || item.repMax > 20 || item.rir < 1) return false
   const exercise = exerciseById.get(item.exerciseId)
-  if (!exercise || !allowed(exercise, plan.settings) || exercise.unilateral || isBodyweightExercise(exercise)
+  if (!exercise || !allowed(exercise, plan.settings, plan.kind === 'routine') || exercise.unilateral || isBodyweightExercise(exercise)
     || item.restSeconds < Math.max(minimumRestSeconds(item), plan.settings.minRestSeconds ?? 0)) return false
   // The first focus exercise remains a traditional, comparable progression anchor.
   return plan.exercises.find((entry) => exerciseById.get(entry.exerciseId)?.muscles.includes(plan.settings.muscles[0]!))?.id !== item.id
@@ -670,8 +674,8 @@ export function estimatePlanSeconds(plan: WorkoutPlan): number {
   return seconds
 }
 
-function allowed(exercise: Exercise, settings: WorkoutSettings): boolean {
-  return !exercise.historyOnly && exercise.equipment.includes(settings.equipment)
+export function allowed(exercise: Exercise, settings: WorkoutSettings, includeHistoryOnly = false): boolean {
+  return (includeHistoryOnly || !exercise.historyOnly) && exercise.equipment.includes(settings.equipment)
     && !settings.avoidedIds.includes(exercise.id)
     && !settings.avoidedPatterns.includes(exercise.pattern)
 }
@@ -700,6 +704,8 @@ export function validatePlan(plan: WorkoutPlan): string[] {
   const settingsValid = errors.length === 0
   if (!nonempty(plan.id)) errors.push('Il piano deve avere un identificativo valido: rigeneralo.')
   if (!nonempty(plan.name)) errors.push('Assegna un nome al piano.')
+  if (plan.kind !== undefined && plan.kind !== 'routine') errors.push('Tipo di piano non valido.')
+  if (plan.routineId !== undefined && !nonempty(plan.routineId)) errors.push('Identificativo della routine non valido.')
   if (!validDate(plan.createdAt)) errors.push('La data di creazione del piano non è valida.')
   if (!finite(plan.warmupSeconds) || plan.warmupSeconds < WARMUP_SECONDS) {
     errors.push('Mantieni almeno 5 minuti di riscaldamento generale.')
@@ -711,6 +717,7 @@ export function validatePlan(plan: WorkoutPlan): string[] {
     errors.push('Il piano è vuoto: aggiungi esercizi per tutti i gruppi selezionati.')
     return errors
   }
+  if (plan.exercises.length > MAX_PLAN_EXERCISES) errors.push(`Il formato supporta al massimo ${MAX_PLAN_EXERCISES} esercizi per scheda.`)
   const itemIds = new Set<string>()
   const exerciseIds = new Set<string>()
   const covered = new Set<Muscle>()
@@ -731,7 +738,7 @@ export function validatePlan(plan: WorkoutPlan): string[] {
       if (exerciseIds.has(exercise.id)) errors.push(`${exercise.name}: evita di duplicare lo stesso esercizio.`)
       exerciseIds.add(exercise.id)
       exercise.muscles.forEach((muscle) => covered.add(muscle))
-      if (settingsValid && !allowed(exercise, plan.settings)) {
+      if (settingsValid && !allowed(exercise, plan.settings, plan.kind === 'routine')) {
         errors.push(`${exercise.name}: incompatibile con attrezzatura o esclusioni; sostituiscilo.`)
       }
       if (isBodyweightExercise(exercise) && item.targetLoad !== null) {
@@ -743,10 +750,10 @@ export function validatePlan(plan: WorkoutPlan): string[] {
       }
     }
     if (!validPrescription(item)) {
-      errors.push(`${exercise?.name ?? 'Esercizio'}: usa serie e ripetizioni intere positive (massimo 50 ripetizioni), recupero 30–300 s, RIR 0–5 e carico positivo oppure vuoto.`)
+      errors.push(`${exercise?.name ?? 'Esercizio'}: usa serie e ripetizioni intere positive (massimo ${MAX_PRESCRIPTION_SETS} serie e 50 ripetizioni), recupero 30–300 s, RIR 0–5 e carico positivo oppure vuoto.`)
     }
     if (finite(item.sets)) totalSets += item.sets
-    if (settingsValid && finite(item.sets) && item.sets > MAX_SETS[plan.settings.level]) {
+    if (plan.kind !== 'routine' && settingsValid && finite(item.sets) && item.sets > MAX_SETS[plan.settings.level]) {
       errors.push(`${exercise?.name ?? 'Esercizio'}: limita le serie a ${MAX_SETS[plan.settings.level]} per il livello scelto.`)
     }
     if (settingsValid && plan.settings.level === 'beginner' && finite(item.rir) && item.rir < 3) {
@@ -767,7 +774,7 @@ export function validatePlan(plan: WorkoutPlan): string[] {
   if (settingsValid) {
     const missing = plan.settings.muscles.filter((muscle) => !covered.has(muscle))
     if (missing.length) errors.push(`Manca lavoro primario per: ${missing.map((muscle) => MUSCLE_LABELS[muscle]).join(', ')}. Aggiungi o sostituisci un esercizio.`)
-    if (plan.exercises.length > MAX_EXERCISES[plan.settings.level] || totalSets > maxTotalSets(plan.settings)) {
+    if (plan.kind !== 'routine' && (plan.exercises.length > MAX_EXERCISES[plan.settings.level] || totalSets > maxTotalSets(plan.settings))) {
       errors.push('Volume eccessivo per il livello scelto: riduci il numero di esercizi o di serie.')
     }
     const seconds = estimatePlanSeconds(plan)
@@ -778,8 +785,24 @@ export function validatePlan(plan: WorkoutPlan): string[] {
   return errors
 }
 
+export function routineVolumeWarnings(plan: WorkoutPlan): string[] {
+  if (plan.kind !== 'routine' || settingsErrors(plan.settings).length || !Array.isArray(plan.exercises)) return []
+  const warnings: string[] = []
+  const limit = MAX_SETS[plan.settings.level]
+  for (const item of plan.exercises) {
+    if (item && finite(item.sets) && item.sets > limit) {
+      warnings.push(`${exerciseById.get(item.exerciseId)?.name ?? 'Esercizio'}: manteniamo le tue ${item.sets} serie; il riferimento del generatore e ${limit}.`)
+    }
+  }
+  const total = plan.exercises.reduce((sum, item) => sum + (item && finite(item.sets) ? item.sets : 0), 0)
+  if (plan.exercises.length > MAX_EXERCISES[plan.settings.level] || total > maxTotalSets(plan.settings)) {
+    warnings.push('Volume superiore ai riferimenti del generatore. La scheda personale non viene tagliata: valuta fatica, recupero e sostenibilita prima di usarla.')
+  }
+  return warnings
+}
+
 export function getSubstitutions(
-  item: PlanExercise, settings: WorkoutSettings, existingIds: string[] = [],
+  item: PlanExercise, settings: WorkoutSettings, existingIds: string[] = [], includeHistoryOnly = false,
 ): Exercise[] {
   if (settingsErrors(settings).length || !item) return []
   const original = exerciseById.get(item.exerciseId)
@@ -787,7 +810,7 @@ export function getSubstitutions(
   const selectedPrimary = original.muscles.filter((muscle) => settings.muscles.includes(muscle))
   const required = selectedPrimary.length ? selectedPrimary : original.muscles
   return EXERCISES.filter((exercise) => exercise.id !== original.id
-    && !existingIds.includes(exercise.id) && allowed(exercise, settings)
+    && !existingIds.includes(exercise.id) && allowed(exercise, settings, includeHistoryOnly)
     && (item.technique === undefined || INTENSITY_ISOLATIONS.has(exercise.id))
     && required.every((muscle) => exercise.muscles.includes(muscle)))
     .sort((a, b) => {
@@ -918,6 +941,14 @@ function prescription(
     id: `candidate-${exercise.id}`, exerciseId: exercise.id, sets, repMin, repMax, restSeconds,
     rir: settings.level === 'beginner' || bodyweight ? 3 : 2, targetLoad: null,
   }
+}
+
+export function routinePrescription(exercise: Exercise, settings: WorkoutSettings, existing: PlanExercise[]): PlanExercise {
+  const mainUsed = existing.some((item) => {
+    const entry = getExercise(item.exerciseId)
+    return entry.category === 'compound' && !isBodyweightExercise(entry) && isFocusExercise(item, settings)
+  })
+  return { ...prescription(exercise, settings, normalSets(exercise, settings.level), mainUsed), id: crypto.randomUUID() }
 }
 
 function recentPenalties(history: WorkoutSession[]): Map<string, number> {

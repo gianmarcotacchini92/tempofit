@@ -1,20 +1,23 @@
-import { DEFAULT_SETTINGS, EQUIPMENT_LABELS, EXERCISES, GOAL_LABELS, LEVEL_LABELS, MUSCLE_LABELS, intensityOptions, supersetCandidates } from './domain.ts'
+import { DEFAULT_SETTINGS, EQUIPMENT_LABELS, EXERCISES, GOAL_LABELS, LEVEL_LABELS, MAX_PLAN_EXERCISES, MAX_PRESCRIPTION_SETS, MUSCLE_LABELS, intensityOptions, supersetCandidates } from './domain.ts'
 import type { WorkoutPlan, WorkoutSession, WorkoutSettings } from './domain.ts'
+import type { WorkoutRoutine } from './routines.ts'
 
 export const STORAGE_KEY = 'tempofit.local.v1'
 export const MIGRATION_NOTICE = 'Muscoli aggiornati: Glutei confluisce in Gambe; Braccia diventa Bicipiti, poi Tricipiti. Serie e carichi conservati. Controlla il focus in Configura e rigenera i vecchi piani per applicare le nuove priorita.'
 
 export interface AppData {
-  version: 2
+  version: 3
   settings: WorkoutSettings
   draft: WorkoutPlan | null
   active: WorkoutSession | null
   history: WorkoutSession[]
   restEndsAt: number | null
+  routines: WorkoutRoutine[]
+  routineHistoryInitialized: boolean
 }
 
 export function emptyData(): AppData {
-  return { version: 2, settings: structuredClone(DEFAULT_SETTINGS), draft: null, active: null, history: [], restEndsAt: null }
+  return { version: 3, settings: structuredClone(DEFAULT_SETTINGS), draft: null, active: null, history: [], restEndsAt: null, routines: [], routineHistoryInitialized: true }
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -51,12 +54,14 @@ function settings(value: unknown): value is WorkoutSettings {
 
 function planShape(value: unknown): value is WorkoutPlan {
   return record(value) && typeof value.id === 'string' && typeof value.name === 'string'
+    && (value.kind === undefined || value.kind === 'routine')
+    && (value.routineId === undefined || (typeof value.routineId === 'string' && value.routineId.trim().length > 0))
     && date(value.createdAt) && settings(value.settings)
     && finite(value.warmupSeconds) && value.warmupSeconds >= 0 && finite(value.reserveSeconds) && value.reserveSeconds >= 0
-    && Array.isArray(value.exercises) && value.exercises.length <= 30 && value.exercises.every((item: unknown) =>
+    && Array.isArray(value.exercises) && value.exercises.length <= MAX_PLAN_EXERCISES && value.exercises.every((item: unknown) =>
       record(item) && typeof item.id === 'string' && typeof item.exerciseId === 'string'
       && EXERCISES.some((exercise) => exercise.id === item.exerciseId)
-      && Number.isInteger(item.sets) && finite(item.sets) && item.sets > 0 && item.sets <= 12
+      && Number.isInteger(item.sets) && finite(item.sets) && item.sets > 0 && item.sets <= MAX_PRESCRIPTION_SETS
       && finite(item.repMin) && finite(item.repMax) && finite(item.restSeconds)
       && finite(item.rir) && nullableNumber(item.targetLoad) && (item.targetLoad === null || (finite(item.targetLoad) && item.targetLoad >= 0))
       && (item.progressionNote === undefined || typeof item.progressionNote === 'string')
@@ -117,11 +122,21 @@ function session(value: unknown): value is WorkoutSession {
 }
 
 export function isAppData(value: unknown): value is AppData {
-  return record(value) && value.version === 2 && settings(value.settings)
+  return record(value) && value.version === 3 && settings(value.settings)
     && (value.draft === null || plan(value.draft))
     && (value.active === null || (session(value.active) && value.active.finishedAt === null))
     && Array.isArray(value.history) && value.history.every((item: unknown) => session(item) && item.finishedAt !== null)
     && nullableNumber(value.restEndsAt)
+    && typeof value.routineHistoryInitialized === 'boolean'
+    && Array.isArray(value.routines) && value.routines.every((item: unknown) =>
+      record(item) && typeof item.id === 'string' && item.id.trim().length > 0
+      && typeof item.name === 'string' && item.name.trim().length > 0 && plan(item.plan)
+      && date(item.createdAt) && date(item.updatedAt) && Date.parse(item.updatedAt) >= Date.parse(item.createdAt)
+      && typeof item.refreshLoads === 'boolean' && (item.source === 'history' || item.source === 'custom')
+      && (item.historyKey === undefined || (typeof item.historyKey === 'string' && item.historyKey.trim().length > 0))
+      && (item.sourceSessionId === undefined || (typeof item.sourceSessionId === 'string' && item.sourceSessionId.trim().length > 0))
+      && new Set(item.plan.exercises.map((entry) => entry.id)).size === item.plan.exercises.length)
+    && new Set(value.routines.map((item: WorkoutRoutine) => item.id)).size === value.routines.length
 }
 
 function migrateSettings(value: unknown): unknown {
@@ -139,15 +154,17 @@ function migrateSession(value: unknown): unknown {
 }
 
 // Both disk reads and imports pass through this path; only validated migrations are saved.
-export function decodeData(value: unknown): { data: AppData; migrated: boolean } | null {
+export function decodeData(value: unknown): { data: AppData; migrated: boolean; schemaUpgraded?: boolean } | null {
   if (isAppData(value)) return { data: value, migrated: false }
-  if (!record(value) || value.version !== 1) return null
-  const migrated: unknown = {
+  if (!record(value) || (value.version !== 1 && value.version !== 2)) return null
+  const anatomy = value.version === 1
+  const previous = anatomy ? {
     ...value, version: 2, settings: migrateSettings(value.settings),
     draft: migratePlan(value.draft), active: migrateSession(value.active),
     history: Array.isArray(value.history) ? value.history.map(migrateSession) : value.history,
-  }
-  return isAppData(migrated) ? { data: migrated, migrated: true } : null
+  } : value
+  const migrated: unknown = { ...previous, version: 3, routines: [], routineHistoryInitialized: false }
+  return isAppData(migrated) ? { data: migrated, migrated: anatomy, schemaUpgraded: true } : null
 }
 
 export function loadData(): { data: AppData; error: string | null; notice?: string } {

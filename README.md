@@ -28,7 +28,7 @@ sostituzione viene scaricato un backup della copia sostituita. Non chiudere
 la pagina prima che compaia **Sincronizzato**.
 
 Con lo stesso account su un secondo dispositivo vuoto, la copia Firebase
-viene recuperata automaticamente. Si sincronizzano storico, serie, carichi,
+viene recuperata automaticamente. Si sincronizzano storico, routine, serie, carichi,
 impostazioni, piano, sessione attiva e scadenza del timer. Aggiunte indipendenti
 allo storico si uniscono; modifiche concorrenti della stessa seduta o della
 sessione in corso richiedono una scelta, senza sovrascrittura automatica.
@@ -180,6 +180,56 @@ modificare le impostazioni di sicurezza del sistema.
   le vecchie associazioni CSV da correggere non mostrano immagini fuorvianti.
   Le varianti senza illustrazione e gli errori di caricamento sono segnalati.
 
+## Routine riutilizzabili
+
+La sezione **Routine** contiene schede indipendenti dalle sedute registrate.
+Si possono creare a mano scegliendo esercizi e ordine, ottenere dal generatore,
+salvare dal piano corrente o ricavare da una singola seduta nello storico.
+Ogni routine ha nome, esercizi, serie, ripetizioni, recuperi, RIR, impostazioni
+e carichi di riferimento; supporta anche le tecniche di intensita compatibili.
+
+Al primo caricamento di un archivio precedente vengono recuperate le routine
+dallo storico: **una per nome, usando la seduta completata piu recente**.
+Maiuscole, spazi ripetuti e forme Unicode equivalenti non creano duplicati.
+Nomi visualizzati e varianti degli esercizi restano quelli della seduta scelta:
+una chest press declinata non diventa panca piana. Si copia la prescrizione
+completa anche da una seduta parziale, senza spostare o duplicare registrazioni
+nello storico. Le vecchie importazioni CSV con associazioni ambigue sono escluse
+finche non vengono corrette.
+
+L'importazione e la correzione del CSV recuperano anche le schede mancanti.
+Il comando **Recupera dallo storico** aggiunge solo nomi non gia presenti e non
+sovrascrive routine modificate o rinominate. Una routine eliminata non riappare
+al reload; puo essere recuperata nuovamente solo su richiesta esplicita.
+Tempo disponibile, obiettivo, livello e recuperi non presenti nel CSV sono parametri
+di lavoro da ricontrollare, non dati misurati durante quelle sedute.
+I muscoli della routine CSV derivano dall'ordine degli esercizi effettivamente
+presenti, senza inventare blocchi solo perche un muscolo compare nel titolo.
+
+**Usa routine** prepara un nuovo piano con identificativi nuovi e senza serie
+gia completate o timer copiati. Se c'e un piano non avviato, ne chiede la
+sostituzione; una sessione attiva non viene interrotta. Le modifiche al piano
+della singola giornata non riscrivono la scheda salvata: **Aggiorna routine**
+lo fa solo su scelta esplicita.
+
+L'opzione **Aggiorna i carichi dallo storico quando la uso** applica i suggerimenti
+gia esistenti per quella precisa variante, con aumenti prudenti solo sul focus.
+Disattivarla mantiene i carichi impostati nella scheda. I pesi restano sempre
+modificabili prima e durante la sessione. Per le routine personali i limiti di
+volume del generatore diventano **avvisi**, senza tagliare serie o esercizi.
+Il generatore automatico mantiene invece i propri limiti. Tempi, recuperi,
+attrezzatura, esclusioni, validita delle prescrizioni e compatibilita delle
+tecniche restano controlli bloccanti; per principianti rimane richiesto RIR
+almeno 3 e non sono disponibili le tecniche avanzate. Il formato supporta
+al massimo 30 esercizi e 12 serie principali per esercizio. Una routine
+incompleta puo essere salvata, ma va corretta prima dell'avvio.
+
+Routine e preferenze vengono incluse nei backup JSON e nella sincronizzazione
+Google/Firebase. Il recupero non pubblica dati prima del consenso di collegamento
+dell'account. Modifiche concorrenti della stessa copia sono gestite con le
+protezioni della sincronizzazione; l'editor rifiuta di sovrascrivere una routine
+aggiornata da un altro dispositivo mentre era aperto.
+
 ## Tecniche per ottimizzare il tempo
 
 Nel configuratore, **Ottimizza il tempo** e facoltativo e disattivato per
@@ -241,8 +291,10 @@ attrezzatura, posizione e contenuto effettivo.
 ## Dati e limiti del prototipo
 
 I dati sono salvati in `localStorage`, sotto la chiave `tempofit.local.v1`.
-Il contenuto usa ora lo schema `version: 2`, mantenendo la stessa chiave per
-ritrovare gli archivi esistenti. La stessa migrazione validata e usata per
+Il contenuto usa ora lo schema `version: 3`, mantenendo la stessa chiave per
+ritrovare gli archivi esistenti. Aggiunge `routines` e il marcatore di recupero
+iniziale, senza cambiare sedute e registrazioni esistenti. La stessa migrazione
+validata e usata per
 caricamento locale e importazione: Glutei diventa Gambe, Braccia viene espanso
 in Bicipiti e Tricipiti, in questo ordine convenzionale, eliminando i doppioni.
 L'ordine originario fra bicipiti e tricipiti non e ricostruibile: ricontrollare
@@ -296,6 +348,7 @@ doloroso e rivolgersi a un professionista qualificato quando necessario.
 |---|---|
 | `src\domain.ts` | Catalogo, vincoli, generatore, tempi, sostituzioni, carichi |
 | `src\storage.ts` | Schema locale, lettura protetta e backup |
+| `src\routines.ts` / `src\RoutineScreens.tsx` | Schede riutilizzabili, recupero dal passato, libreria e modifica |
 | `src\accountStorage.ts` | Copie browser separate per account, controlli e baseline compatta |
 | `src\useCloudWorkspace.ts` | Cambio account, persistenza locale e integrazione React |
 | `src\cloudModel.ts` / `src\cloudSync.ts` | Merge a tre vie, conflitti, retry e protezione da risposte obsolete |

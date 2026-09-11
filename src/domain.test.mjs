@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {
   DEFAULT_SETTINGS, EXERCISES, MUSCLE_LABELS, EQUIPMENT_LABELS, GOAL_LABELS,
   LEVEL_LABELS, PATTERN_LABELS, generatePlan, getExercise, estimateExerciseSeconds,
-  estimatePlanSeconds, validatePlan, getSubstitutions, suggestLoad, minimumRestSeconds, planBudgetNote, isBodyweightExercise,
+  estimatePlanSeconds, validatePlan, getSubstitutions, suggestLoad, minimumRestSeconds, planBudgetNote, isBodyweightExercise, routineVolumeWarnings,
 } from './domain.ts'
 
 function settings(overrides = {}) {
@@ -35,6 +35,29 @@ test('manual edits preserve recovery floors instead of squeezing work into the b
   assert.equal(minimumRestSeconds(item('cable-row', { repMin: 8, repMax: 12 })), 90)
   assert.equal(minimumRestSeconds(item('push-up', { repMin: 8, repMax: 15 })), 60)
   assert.deepEqual(validatePlan(planFor([item('barbell-bench', { restSeconds: 120 })])), [])
+})
+
+test('history-only variants are manual routine choices without entering automatic generation or substitutions', () => {
+  const request = settings({ minutes: 90, goal: 'hypertrophy', muscles: ['chest'] })
+  const historical = item('machine-decline-chest-press', { repMin: 8, repMax: 12, restSeconds: 120 })
+  const manual = planFor([historical], { settings: request, kind: 'routine', routineId: 'saved' })
+  assert.deepEqual(validatePlan(manual), [])
+  assert.ok(validatePlan({ ...manual, kind: undefined }).some((error) => error.includes('incompatibile')))
+  const original = item()
+  assert.ok(!getSubstitutions(original, request).some((entry) => entry.historyOnly))
+  assert.ok(getSubstitutions(original, request, [], true).some((entry) => entry.id === historical.exerciseId))
+  assert.ok(!getSubstitutions(original, request, [historical.exerciseId], true).some((entry) => entry.id === historical.exerciseId))
+  const automatic = generatePlan({ ...request, preferredIds: [historical.exerciseId] })
+  assert.ok(automatic.plan)
+  assert.ok(automatic.plan.exercises.every((entry) => !getExercise(entry.exerciseId).historyOnly))
+  for (const changes of [{ equipment: 'bodyweight' }, { avoidedIds: [historical.exerciseId] }, { avoidedPatterns: ['horizontal_push'] }]) {
+    assert.ok(validatePlan({ ...manual, settings: { ...request, ...changes } }).some((error) => error.includes('incompatibile')))
+  }
+  assert.ok(validatePlan({ ...manual, kind: 7 }).some((error) => error.includes('Tipo')))
+  assert.ok(validatePlan({ ...manual, routineId: 7 }).some((error) => error.includes('Identificativo')))
+  const unsafe = { ...manual, exercises: [{ ...historical, restSeconds: 30, sets: 9 }] }
+  assert.ok(validatePlan(unsafe).some((error) => error.includes('recupero')))
+  assert.ok(routineVolumeWarnings(unsafe).some((warning) => warning.includes('9 serie')))
 })
 
 function assertValid(result, request) {

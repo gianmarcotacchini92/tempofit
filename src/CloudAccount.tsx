@@ -23,7 +23,7 @@ export function CloudAccount({ workspace }: { workspace: CloudWorkspace }) {
     </> : <>
       <p className={`cloud-state cloud-${status.phase}`} role="status">{status.message}</p>
       {(status.phase === 'choice' || status.phase === 'conflict') && <div className="cloud-choices">
-        <p>Questa copia contiene <strong>{workspace.data.history.length} allenamenti salvati</strong>{workspace.data.active ? ' e una sessione in corso' : ''}. I dati senza account restano separati.</p>
+        <p>Questa copia contiene <strong>{workspace.data.history.length} allenamenti salvati e {workspace.data.routines.length} routine</strong>{workspace.data.active ? ', con una sessione in corso' : ''}. I dati senza account restano separati.</p>
         <button className="button primary full" disabled={blocked} onClick={() => {
           if (status.canUseRemote) setConfirm('local')
           else void workspace.useLocal()

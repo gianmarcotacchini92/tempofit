@@ -179,7 +179,7 @@ export function importWorkoutCsv(text: string): CsvImportResult {
     return { data: null, importedSessions: 0, importedSets: 0, skippedSessions: groups.size, skippedExercises: [...skippedExercises], skippedRows, error: 'Nessuna seduta importabile: non sono state riconosciute serie allenanti con date valide.' }
   }
   const importedSets = sessions.reduce((sum, session) => sum + session.logs.length, 0)
-  const data: AppData = { version: 2, settings: structuredClone(DEFAULT_SETTINGS), draft: null, active: null, history: sessions, restEndsAt: null }
+  const data: AppData = { version: 3, settings: structuredClone(DEFAULT_SETTINGS), draft: null, active: null, history: sessions, restEndsAt: null, routines: [], routineHistoryInitialized: false }
   if (!isAppData(data)) return { data: null, importedSessions: 0, importedSets: 0, skippedSessions: groups.size, skippedExercises: [...skippedExercises], skippedRows, error: 'Il CSV supera i limiti del modello storico. Nessun dato e stato importato.' }
   return { data, importedSessions: sessions.length, importedSets, skippedSessions: groups.size - sessions.length, skippedExercises: [...skippedExercises], skippedRows, error: null }
 }

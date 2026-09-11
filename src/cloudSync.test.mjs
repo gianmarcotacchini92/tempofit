@@ -433,7 +433,7 @@ test('storage apply/remember failures preserve recoverable originals and stop fu
 })
 
 test('invalid remote history and unsupported schema surface errors without replacing local data', async (t) => {
-  for (const remote of [data('duplicate', 'duplicate'), { ...data('future'), version: 3 }]) {
+  for (const remote of [data('duplicate', 'duplicate'), { ...data('future'), version: 4 }]) {
     const h = harness(t, emptyData(), snapshot(remote))
     await h.sync.start()
     assert.equal(h.phase(), 'error')

@@ -6,6 +6,7 @@ import { CSV_EXERCISE_MAP } from './csvExercises.ts'
 import { EXERCISES, getExercise, needsCsvRepair, suggestLoad, generatePlan, DEFAULT_SETTINGS } from './domain.ts'
 import { progressPoints } from './progress.ts'
 import { repairCsvHistory } from './csvRepair.ts'
+import { recoverHistoryRoutines } from './routines.ts'
 
 const header = 'title,start_time,end_time,description,exercise_title,superset_id,exercise_notes,set_index,set_type,weight_kg,reps,distance_km,duration_seconds,rpe'
 function row(exercise, weight = 40, index = 0, title = 'Seduta esempio') {
@@ -35,6 +36,9 @@ test('imports Hevy CSV sessions, preserves RPE as conservative RIR and skips war
   assert.equal(result.skippedRows, 2)
   assert.deepEqual(result.skippedExercises, ['Mystery Movement'])
   assert.ok(result.data && isAppData(result.data))
+  assert.equal(result.data.version, 3)
+  assert.deepEqual(result.data.routines, [])
+  assert.equal(result.data.routineHistoryInitialized, false)
   const session = result.data.history[0]
   assert.equal(session.plan.name, 'Dorso - Bicipiti')
   assert.deepEqual(session.plan.settings.muscles, ['back', 'biceps'])
@@ -47,6 +51,23 @@ test('imports Hevy CSV sessions, preserves RPE as conservative RIR and skips war
   assert.equal(session.plan.exercises[0].sourceExerciseName, 'Pull Up')
   assert.equal(session.logs[0].sourceSetIndex, 1)
   assert.equal(session.importSource.mappingVersion, 2)
+})
+
+test('CSV parsing leaves history untouched and routine extraction is an explicit separate step', () => {
+  const imported = importWorkoutCsv([header,
+    row('Chest Press (Machine)', 70, 0, 'Petto'),
+    row('Decline Bench Press (Machine)', 55, 0, 'Petto'),
+  ].join('\n')).data
+  const before = structuredClone(imported)
+  const recovered = recoverHistoryRoutines(imported)
+  assert.equal(recovered.added, 1)
+  assert.equal(recovered.data.history, imported.history)
+  assert.deepEqual(imported, before)
+  assert.equal(recovered.data.routines[0].plan.exercises[0].exerciseId, 'machine-chest-press')
+  assert.equal(recovered.data.routines[0].plan.exercises[1].exerciseId, 'machine-decline-chest-press')
+  assert.equal(recovered.data.routines[0].plan.exercises[0].restSeconds, imported.history[0].plan.exercises[0].restSeconds)
+  assert.equal(recovered.data.routines[0].plan.exercises[0].rir, imported.history[0].plan.exercises[0].rir)
+  assert.equal(isAppData(recovered.data), true)
 })
 
 test('rejects malformed or non-importable CSV without producing partial app data', () => {

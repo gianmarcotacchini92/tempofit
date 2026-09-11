@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowUpRight, BookOpen, Check, ChevronRight, CircleHelp, Download, Dumbbell, HardDrive, History as HistoryIcon, LayoutDashboard, LockKeyhole, Menu, Settings2, TrendingUp, Upload, X, Zap } from 'lucide-react'
+import { ArrowUpRight, BookOpen, BookmarkPlus, Check, ChevronRight, CircleHelp, Download, Dumbbell, HardDrive, History as HistoryIcon, LayoutDashboard, LockKeyhole, Menu, Settings2, TrendingUp, Upload, X, Zap } from 'lucide-react'
 import { Configurator } from './Configurator'
 import { ActiveWorkout, WorkoutEditor } from './Workout'
 import { Dashboard, ExerciseDetail, ExerciseLibrary, History, NoWorkout, Progress } from './Screens'
@@ -10,19 +10,24 @@ import { importWorkoutCsv } from './csvImport'
 import { repairCsvHistory } from './csvRepair'
 import type { CsvRepairResult } from './csvRepair'
 import { needsCsvRepair, validatePlan, workoutSetSteps } from './domain'
-import type { Exercise, SetLog, WorkoutPlan, WorkoutSettings } from './domain'
+import type { Exercise, SetLog, WorkoutPlan, WorkoutSession, WorkoutSettings } from './domain'
 import { loggedSetsLabel } from './format'
 import { CloudAccount } from './CloudAccount'
 import { useCloudWorkspace } from './useCloudWorkspace'
 import type { CloudWorkspace } from './useCloudWorkspace'
 import type { CloudClientFactory } from './cloudClientTypes'
+import { canonicalJson } from './cloudModel'
+import { blankRoutine, extractHistoryRoutines, instantiateRoutine, normalizeRoutineName, recoverHistoryRoutines, routineFromPlan, addRoutineExercise, moveRoutineExercise, setRoutineExercises } from './routines'
+import type { WorkoutRoutine } from './routines'
+import { RoutineEditor, RoutineExercisePicker, RoutineLibrary, RoutineSettingsDialog } from './RoutineScreens'
 import './App.css'
 
-type View = 'home' | 'workout' | 'exercises' | 'history' | 'progress'
+type View = 'home' | 'workout' | 'routines' | 'exercises' | 'history' | 'progress'
 type Dialog = 'settings' | 'help' | 'finish' | 'discard' | 'reset' | null
 const navigation = [
   { id: 'home', label: 'Panoramica', icon: LayoutDashboard },
   { id: 'workout', label: 'Allenamento', icon: Dumbbell },
+  { id: 'routines', label: 'Routine', icon: BookmarkPlus },
   { id: 'exercises', label: 'Esercizi', icon: BookOpen },
   { id: 'history', label: 'Storico', icon: HistoryIcon },
   { id: 'progress', label: 'Progressi', icon: TrendingUp },
@@ -32,6 +37,11 @@ function WorkspaceApp({ workspace }: { workspace: CloudWorkspace }) {
   const { data, setData, storageError, setStorageError } = workspace
   const [view, setView] = useState<View>(data.active ? 'workout' : 'home')
   const [config, setConfig] = useState<WorkoutSettings | null>(null)
+  const [configTarget, setConfigTarget] = useState<'workout' | 'routine'>('workout')
+  const [routineEdit, setRoutineEdit] = useState<{ initial: WorkoutRoutine; original?: WorkoutRoutine; token: number } | null>(null)
+  const [pendingRoutineDelete, setPendingRoutineDelete] = useState<WorkoutRoutine | null>(null)
+  const [pendingRoutineUse, setPendingRoutineUse] = useState<{ routine: WorkoutRoutine; draft: WorkoutPlan } | null>(null)
+  const [draftTools, setDraftTools] = useState<{ kind: 'settings' | 'add'; base: WorkoutPlan } | null>(null)
   const [dialog, setDialog] = useState<Dialog>(null)
   const [pendingRepair, setPendingRepair] = useState<{ base: AppData; result: Extract<CsvRepairResult, { error: null }>; backedUp: boolean } | null>(null)
   const [inspecting, setInspecting] = useState<Exercise | null>(null)
@@ -56,6 +66,7 @@ function WorkspaceApp({ workspace }: { workspace: CloudWorkspace }) {
   }, [toast])
 
   function navigate(next: View) {
+    if (next !== 'routines') setRoutineEdit(null)
     setView(next)
     setMenuOpen(false)
     window.scrollTo({ top: 0, behavior: 'instant' })
@@ -65,14 +76,97 @@ function WorkspaceApp({ workspace }: { workspace: CloudWorkspace }) {
   function configure(preset?: Partial<WorkoutSettings>) {
     if (workspace.accountChangePending) { workspace.report('Completa il cambio account prima di creare un altro piano.'); return }
     if (data.active) { navigate('workout'); setToast('Hai una sessione in corso. Salvala o scartala prima di creare un altro piano.'); return }
+    setConfigTarget('workout')
     setConfig({ ...data.settings, ...preset })
   }
 
   function generated(plan: WorkoutPlan, settings: WorkoutSettings, message: string) {
+    if (configTarget === 'routine') {
+      setConfig(null)
+      openRoutineEditor(routineFromPlan(plan))
+      return
+    }
     setData((old) => ({ ...old, draft: plan, settings }))
     setConfig(null)
     navigate('workout')
     setToast(message || 'Il tuo allenamento e pronto. Controlla i dettagli e scegli i carichi.')
+  }
+
+  function openRoutineEditor(initial: WorkoutRoutine, original?: WorkoutRoutine) {
+    if (workspace.accountChangePending || storageError) { setToast('Risolvi il blocco di salvataggio prima di modificare le routine.'); return }
+    setRoutineEdit({ initial: structuredClone(initial), original, token: workspace.token() })
+    navigate('routines')
+  }
+
+  function saveRoutine(routine: WorkoutRoutine): string | null {
+    if (!routineEdit || !workspace.isCurrentToken(routineEdit.token)) return 'Account cambiato: riapri la routine nel profilo corretto.'
+    const latest = workspace.currentData()
+    const stored = latest.routines.find((item) => item.id === routine.id)
+    if (routineEdit.original && (!stored || canonicalJson(stored) !== canonicalJson(routineEdit.original))) return 'La routine e cambiata su un altro dispositivo. Riaprila prima di salvare.'
+    if (!routineEdit.original && stored) return 'Questa routine e gia stata salvata. Riaprila dalla raccolta.'
+    if (latest.routines.some((item) => item.id !== routine.id && normalizeRoutineName(item.name) === normalizeRoutineName(routine.name))) return 'Esiste gia una routine con questo nome. Scegli un nome diverso oppure modifica quella esistente.'
+    const saved: WorkoutRoutine = {
+      ...routine, source: 'custom',
+      updatedAt: new Date(Math.max(Date.now(), Date.parse(routine.createdAt), Date.parse(routine.updatedAt))).toISOString(),
+      plan: setRoutineExercises({ ...routine.plan, name: routine.name, kind: 'routine', routineId: routine.id }, routine.plan.exercises),
+    }
+    setData({ ...latest, routines: stored ? latest.routines.map((item) => item.id === saved.id ? saved : item) : [...latest.routines, saved] })
+    setRoutineEdit(null)
+    setToast('Routine salvata. Lo storico degli allenamenti non e stato modificato.')
+    return null
+  }
+
+  function recoverRoutines() {
+    if (storageError || workspace.accountChangePending) { setToast('Risolvi il blocco di salvataggio prima di recuperare le routine.'); return }
+    try {
+      const result = recoverHistoryRoutines(workspace.currentData())
+      setData(result.data)
+      setToast(`${result.added} routine aggiunte dalla seduta piu recente per nome. ${result.existing} gia presenti: nessuna scheda sostituita.${result.skippedLegacy ? ' Le vecchie associazioni CSV vanno prima corrette.' : ''}`)
+    } catch (error) { if (error instanceof Error) setToast(error.message); else throw error }
+  }
+
+  function loadRoutine(routine: WorkoutRoutine, replaceDraft = false) {
+    if (storageError || workspace.accountChangePending) { setToast('Risolvi il blocco di salvataggio prima di usare una routine.'); return }
+    const latest = workspace.currentData()
+    if (latest.active) { navigate('workout'); setToast('Hai una sessione in corso. Salvala o scartala prima di usare un’altra routine.'); return }
+    const stored = latest.routines.find((item) => item.id === routine.id)
+    if (!stored || canonicalJson(stored) !== canonicalJson(routine)) { setToast('La routine e cambiata. Selezionala nuovamente dalla raccolta.'); setPendingRoutineUse(null); return }
+    if (latest.draft && !replaceDraft) { setPendingRoutineUse({ routine, draft: latest.draft }); return }
+    if (replaceDraft && (!pendingRoutineUse || canonicalJson(latest.draft) !== canonicalJson(pendingRoutineUse.draft))) { setToast('Il piano e cambiato. Riapri la routine prima di sostituirlo.'); setPendingRoutineUse(null); return }
+    try {
+      const plan = instantiateRoutine(stored, latest.history)
+      setData({ ...latest, draft: plan, settings: plan.settings, restEndsAt: null })
+      setPendingRoutineUse(null)
+      navigate('workout')
+      setToast('Routine pronta: controlla prescrizioni, carichi e tempo prima di iniziare. La scheda originale resta invariata.')
+    } catch (error) { if (error instanceof Error) { setToast(error.message); setPendingRoutineUse(null) } else throw error }
+  }
+
+  function saveDraftRoutine() {
+    const draft = workspace.currentData().draft
+    if (!draft) { setToast('Nessun piano da salvare come routine.'); return }
+    const original = data.routines.find((routine) => routine.id === draft.routineId)
+    openRoutineEditor(original ? { ...original, plan: structuredClone(draft) } : routineFromPlan(draft), original)
+  }
+
+  function saveHistoryRoutine(session: WorkoutSession) {
+    const recovered = extractHistoryRoutines([session])[0]
+    if (!recovered) { setToast('Servono serie registrate e associazioni corrette degli esercizi per salvare questa routine.'); return }
+    openRoutineEditor(routineFromPlan(recovered.plan))
+  }
+
+  function applyDraftTool(plan: WorkoutPlan) {
+    if (!draftTools || !workspace.isCurrentData(data) || canonicalJson(workspace.currentData().draft) !== canonicalJson(draftTools.base)) {
+      setToast('Il piano e cambiato. Riapri lo strumento prima di applicare modifiche.'); setDraftTools(null); return
+    }
+    setData((old) => ({ ...old, draft: setRoutineExercises(plan, plan.exercises) }))
+    setDraftTools(null)
+  }
+
+  function changeDraft(plan: WorkoutPlan) {
+    const latest = workspace.currentData()
+    if (!data.draft || canonicalJson(latest.draft) !== canonicalJson(data.draft)) { setToast('Il piano e cambiato. Riapri la modifica prima di continuare.'); return }
+    setData({ ...latest, draft: plan.kind === 'routine' ? setRoutineExercises(plan, plan.exercises) : plan })
   }
 
   function startWorkout() {
@@ -139,7 +233,7 @@ function WorkspaceApp({ workspace }: { workspace: CloudWorkspace }) {
     if (file.size > 10 * 1024 * 1024) { setToast('Il file supera il limite di 10 MB.'); return }
     try {
       const csv = file.name.toLocaleLowerCase('it').endsWith('.csv') || file.type === 'text/csv'
-      if ((data.active || data.history.length > 0 || data.draft) && !(csv && legacyCsvCount > 0)) { setToast('Per proteggere i tuoi dati, importa in un archivio vuoto. Esporta prima il backup, poi usa Ripristina.'); return }
+      if ((data.active || data.history.length > 0 || data.draft || (!csv && data.routines.length > 0)) && !(csv && legacyCsvCount > 0)) { setToast('Per proteggere i tuoi dati, importa in un archivio vuoto. Esporta prima il backup, poi usa Ripristina.'); return }
       if (csv && legacyCsvCount > 0 && storageError) { setToast('Risolvi il blocco di salvataggio prima di correggere lo storico.'); return }
       const content = await file.text()
       if (!workspace.isCurrentToken(scopeToken)) { workspace.report('Cambio account in corso o completato: importazione annullata. Seleziona nuovamente il file nel profilo corretto.'); return }
@@ -154,7 +248,7 @@ function WorkspaceApp({ workspace }: { workspace: CloudWorkspace }) {
           setDialog(null)
           return
         }
-        setData(imported.data)
+        setData(recoverHistoryRoutines({ ...imported.data, routines: data.routines }).data)
         setStorageError(null)
         setDialog(null)
         navigate('history')
@@ -163,7 +257,7 @@ function WorkspaceApp({ workspace }: { workspace: CloudWorkspace }) {
       }
       const decoded = decodeData(JSON.parse(content))
       if (!decoded) { setToast('Backup non compatibile. Nessun dato e stato modificato.'); return }
-      setData(decoded.data)
+      setData(decoded.data.routineHistoryInitialized ? decoded.data : recoverHistoryRoutines(decoded.data).data)
       setStorageError(null)
       setDialog(null)
       navigate(decoded.data.active ? 'workout' : 'home')
@@ -201,14 +295,39 @@ function WorkspaceApp({ workspace }: { workspace: CloudWorkspace }) {
         {identity && ['choice', 'conflict', 'error', 'offline'].includes(workspace.status.phase) && <div className="alert cloud-banner" role="status"><p>{workspace.status.message}</p><button className="button secondary compact" onClick={() => setDialog('settings')}>Account e sincronizzazione</button></div>}
         {legacyCsvCount > 0 && <div className="alert storage-alert" role="alert"><p>{legacyCsvCount} sedute provengono dal vecchio import CSV, che accorpava varianti diverse. Non vengono usate nei grafici per esercizio o nei suggerimenti di carico finche non le correggi dal file originale. Se hai un piano gia generato, ricontrolla i carichi prima di iniziare.</p><button className="button secondary compact" onClick={() => setDialog('settings')}>Correggi associazioni CSV</button></div>}
         {storageError && <div className="alert storage-alert" role="alert"><p>{storageError}</p><div><button className="button secondary compact" onClick={() => downloadData(JSON.stringify(data, null, 2), 'tempofit-dati-correnti.json')}>Esporta dati correnti</button><button className="button secondary compact" onClick={exportRaw}>Esporta originale</button><button className="button secondary compact" onClick={() => window.location.reload()}>Ricarica</button><button className="button ghost compact" disabled={Boolean(identity) || workspace.accountChangePending} onClick={() => setDialog('reset')}>Ripristina</button></div></div>}
-        {view === 'home' && <Dashboard history={data.history} active={data.active} onCreate={configure} onHistory={() => navigate('history')} onResume={() => navigate('workout')} />}
+        {view === 'home' && <Dashboard history={data.history} active={data.active} onCreate={configure} onHistory={() => navigate('history')} onResume={() => navigate('workout')} onRoutines={() => navigate('routines')} routineCount={data.routines.length} />}
         {view === 'workout' && (data.active ? <ActiveWorkout session={data.active} now={now} restEndsAt={data.restEndsAt} onLog={logSet} onInspect={setInspecting}
           onUndo={undoSet}
           onRest={(end) => { setNow(Date.now()); setData((old) => ({ ...old, restEndsAt: end })) }} onFinish={() => setDialog('finish')} onDiscard={() => setDialog('discard')} blocked={Boolean(storageError)} />
-          : data.draft ? <WorkoutEditor plan={data.draft} onChange={(plan) => setData((old) => ({ ...old, draft: plan }))} onConfigure={() => setConfig(data.draft!.settings)} onStart={startWorkout} onInspect={setInspecting} blocked={Boolean(storageError)} />
-            : <NoWorkout onCreate={() => configure()} />)}
+          : data.draft ? <WorkoutEditor key={data.draft.id} plan={data.draft} onChange={changeDraft}
+              onConfigure={() => {
+                if (data.draft?.kind === 'routine') setDraftTools({ kind: 'settings', base: data.draft })
+                else if (data.draft) { setConfigTarget('workout'); setConfig(data.draft.settings) }
+              }} onStart={startWorkout} onInspect={setInspecting} blocked={Boolean(storageError) || workspace.accountChangePending}
+              onSaveRoutine={saveDraftRoutine} saveRoutineLabel={data.routines.some((routine) => routine.id === data.draft?.routineId) ? 'Aggiorna routine' : 'Salva come routine'}
+              onAddExercise={data.draft.kind === 'routine' ? () => { if (data.draft) setDraftTools({ kind: 'add', base: data.draft }) } : undefined}
+              onMoveExercise={data.draft.kind === 'routine' ? (id, direction) => {
+                if (!data.draft) { setToast('Nessun piano da riordinare.'); return }
+                try { changeDraft(moveRoutineExercise(data.draft, id, direction)) }
+                catch (error) { if (error instanceof Error) setToast(error.message); else throw error }
+              } : undefined} />
+            : <NoWorkout onCreate={() => configure()} onRoutines={data.routines.length ? () => navigate('routines') : undefined} />)}
+        {view === 'routines' && (routineEdit ? <RoutineEditor key={`${routineEdit.initial.id}:${routineEdit.token}`} initial={routineEdit.initial}
+          blocked={Boolean(storageError) || workspace.accountChangePending} onSave={saveRoutine} onCancel={() => setRoutineEdit(null)} onInspect={setInspecting} />
+          : <RoutineLibrary routines={data.routines} history={data.history} blocked={Boolean(storageError) || workspace.accountChangePending}
+            onCreate={() => openRoutineEditor(blankRoutine(data.settings))}
+            onGenerate={() => { setConfigTarget('routine'); setConfig(structuredClone(data.settings)) }}
+            onRecover={recoverRoutines} onUse={loadRoutine} onEdit={(routine) => openRoutineEditor(routine, routine)}
+            onDelete={setPendingRoutineDelete} onDuplicate={(routine) => {
+              const copy = routineFromPlan(routine.plan)
+              const names = new Set(data.routines.map((item) => normalizeRoutineName(item.name)))
+              let suffix = 1
+              let name = `${routine.name} (copia)`
+              while (names.has(normalizeRoutineName(name))) { suffix++; name = `${routine.name} (copia ${suffix})` }
+              openRoutineEditor({ ...copy, name, plan: { ...copy.plan, name }, refreshLoads: routine.refreshLoads })
+            }} />)}
         {view === 'exercises' && <ExerciseLibrary equipment={data.settings.equipment} onInspect={setInspecting} />}
-        {view === 'history' && <History history={data.history} onCreate={() => configure()} onInspect={setInspecting} />}
+        {view === 'history' && <History history={data.history} onCreate={() => configure()} onInspect={setInspecting} onSaveRoutine={saveHistoryRoutine} />}
         {view === 'progress' && <Progress history={data.history} onInspect={setInspecting} />}
         <footer className="page-footer"><span>Fatto per il tuo ritmo. <a href={`${import.meta.env.BASE_URL}exercises/ATTRIBUTION.json`} target="_blank" rel="noreferrer">Crediti illustrazioni</a></span><span>TempoFit <span className="accent">/</span> {identity ? 'Google + Firebase' : 'Modalita locale'}</span></footer>
       </main>
@@ -216,11 +335,27 @@ function WorkspaceApp({ workspace }: { workspace: CloudWorkspace }) {
     <nav className="mobile-navigation" aria-label="Navigazione mobile">{navigation.map(({ id, label, icon: Icon }) => <button key={id} className={view === id ? 'active' : ''} aria-current={view === id ? 'page' : undefined} onClick={() => navigate(id)}><Icon size={20} /><span>{label}</span></button>)}</nav>
     {toast && <div className="toast" role="status"><Check size={18} /><span>{toast}</span><button className="icon-button" aria-label="Chiudi messaggio" onClick={() => setToast('')}><X size={16} /></button></div>}
     {config && <Configurator initial={config} history={data.history} onClose={() => setConfig(null)} onGenerate={generated} />}
+    {draftTools?.kind === 'settings' && <RoutineSettingsDialog plan={draftTools.base} onClose={() => setDraftTools(null)} onApply={(settings) => applyDraftTool({ ...draftTools.base, settings })} />}
+    {draftTools?.kind === 'add' && <RoutineExercisePicker plan={draftTools.base} onClose={() => setDraftTools(null)} onChoose={(exercise) => {
+      try { applyDraftTool(addRoutineExercise(draftTools.base, exercise.id)) }
+      catch (error) { if (error instanceof Error) { setToast(error.message); setDraftTools(null) } else throw error }
+    }} />}
+    {pendingRoutineUse && <Modal title="Usare questa routine?" onClose={() => setPendingRoutineUse(null)}><p className="dialog-copy">Il piano non ancora avviato verra sostituito con {pendingRoutineUse.routine.name}. Lo storico e la routine salvata non cambiano.</p>
+      <div className="modal-actions"><button className="button secondary" onClick={() => setPendingRoutineUse(null)}>Annulla</button><button className="button primary" disabled={Boolean(storageError)} onClick={() => loadRoutine(pendingRoutineUse.routine, true)}>Sostituisci il piano</button></div></Modal>}
+    {pendingRoutineDelete && <Modal title="Eliminare questa routine?" onClose={() => setPendingRoutineDelete(null)}><p className="dialog-copy">Elimina solo la scheda {pendingRoutineDelete.name}. Le sedute nello storico e gli allenamenti gia preparati rimangono invariati. La cancellazione della routine si sincronizza con il tuo account.</p>
+      <div className="modal-actions"><button className="button secondary" onClick={() => setPendingRoutineDelete(null)}>Annulla</button><button className="button danger" disabled={Boolean(storageError)} onClick={() => {
+        const latest = workspace.currentData()
+        const stored = latest.routines.find((routine) => routine.id === pendingRoutineDelete.id)
+        if (!stored || canonicalJson(stored) !== canonicalJson(pendingRoutineDelete)) { setToast('La routine e cambiata. Riapri la raccolta prima di eliminarla.'); setPendingRoutineDelete(null); return }
+        setData({ ...latest, routines: latest.routines.filter((routine) => routine.id !== stored.id) })
+        setPendingRoutineDelete(null)
+        setToast('Routine eliminata. Allenamenti e storico conservati.')
+      }}>Elimina routine</button></div></Modal>}
     {inspecting && <Modal title={inspecting.name} onClose={() => setInspecting(null)}><ExerciseDetail exercise={inspecting} /></Modal>}
     {dialog === 'settings' && <Modal title="Il tuo spazio personale." subtitle={identity ? 'Account Google, sincronizzazione e backup.' : 'Accesso Google facoltativo. I dati locali restano tuoi.'} onClose={() => setDialog(null)}>
       <div className="settings-content"><CloudAccount workspace={workspace} /><div className="quiet-note"><HardDrive size={22} /><p>{identity ? 'Controlla lo stato Sincronizzato prima di cambiare dispositivo. Le modifiche in attesa sono conservate nella copia locale di questo account. Mantieni anche un backup JSON.' : 'Senza account i dati restano in questo browser e a questo indirizzo. Collega Google per sincronizzarli, oppure conserva un backup JSON.'}</p></div>
-        <button className="settings-action" onClick={() => { downloadData(JSON.stringify(data, null, 2), 'tempofit-backup.json'); setToast('Backup esportato.') }}><Download size={21} /><span><strong>Esporta il tuo backup</strong><small>Profilo, piani, sessione attiva e storico in JSON</small></span><ChevronRight size={18} /></button>
-        <button className="settings-action" onClick={() => importInput.current?.click()}><Upload size={21} /><span><strong>{legacyCsvCount > 0 ? 'Correggi storico dal CSV originale' : 'Importa backup o CSV'}</strong><small>{legacyCsvCount > 0 ? 'Ripara solo le vecchie sedute corrispondenti. Non serve cancellare lo storico.' : 'JSON TempoFit o CSV Hevy, disponibile solo con archivio vuoto'}</small></span><ChevronRight size={18} /></button>
+        <button className="settings-action" onClick={() => { downloadData(JSON.stringify(data, null, 2), 'tempofit-backup.json'); setToast('Backup esportato.') }}><Download size={21} /><span><strong>Esporta il tuo backup</strong><small>Profilo, routine, piani, sessione attiva e storico in JSON</small></span><ChevronRight size={18} /></button>
+        <button className="settings-action" onClick={() => importInput.current?.click()}><Upload size={21} /><span><strong>{legacyCsvCount > 0 ? 'Correggi storico dal CSV originale' : 'Importa backup o CSV'}</strong><small>{legacyCsvCount > 0 ? 'Ripara solo le vecchie sedute corrispondenti. Non serve cancellare lo storico.' : 'JSON richiede uno spazio vuoto. CSV richiede storico vuoto e mantiene le routine.'}</small></span><ChevronRight size={18} /></button>
         <input className="sr-only" type="file" ref={importInput} accept=".json,.csv,application/json,text/csv" aria-label="Backup JSON o CSV allenamenti" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importData(file); event.target.value = '' }} />
         <div className="settings-divider" /><button className="button danger ghost full" disabled={Boolean(identity) || workspace.accountChangePending} onClick={() => setDialog('reset')}>Ripristina i dati locali</button>
         {identity && <p className="field-help">Esci da Google per ripristinare lo spazio senza account. Questa azione non cancella lo storico nel cloud.</p>}
@@ -236,7 +371,7 @@ function WorkspaceApp({ workspace }: { workspace: CloudWorkspace }) {
       <div className="modal-actions"><button className="button secondary" onClick={() => setPendingRepair(null)}>Annulla</button>
         <button className="button primary" disabled={!pendingRepair.backedUp || Boolean(storageError)} onClick={() => {
           if (storageError || data !== pendingRepair.base) { setToast('I dati sono cambiati. Ricarica il CSV prima di confermare.'); setPendingRepair(null); return }
-          setData(pendingRepair.result.data)
+          setData(recoverHistoryRoutines(pendingRepair.result.data).data)
           setToast(`Corrette ${pendingRepair.result.correctedSessions} sedute. Le varianti ora hanno storico e progressi separati.`)
           setPendingRepair(null)
           navigate('history')
@@ -252,7 +387,7 @@ function WorkspaceApp({ workspace }: { workspace: CloudWorkspace }) {
     {dialog === 'finish' && data.active && <Modal title="Un altro passo fatto." subtitle={`${loggedSetsLabel(data.active.logs)} registrate. Salviamo il lavoro di oggi?`} onClose={() => setDialog(null)}>
       <p className="dialog-copy">Solo le serie completate entrano nello storico e nella progressione. Le altre restano indicate come non eseguite.</p><div className="modal-actions"><button className="button secondary" onClick={() => setDialog(null)}>Continua sessione</button><button className="button primary" onClick={finishWorkout}><Check size={18} /> Salva e termina</button></div></Modal>}
     {dialog === 'discard' && <Modal title="Scartare questa sessione?" onClose={() => setDialog(null)}><p className="dialog-copy">Le serie della sessione in corso saranno eliminate. Il piano e lo storico precedente restano disponibili.</p><div className="modal-actions"><button className="button secondary" onClick={() => setDialog(null)}>Continua ad allenarti</button><button className="button danger" onClick={() => { setData((old) => ({ ...old, active: null, restEndsAt: null })); setDialog(null) }}>Scarta sessione</button></div></Modal>}
-    {dialog === 'reset' && <Modal title="Ripristinare lo spazio locale?" onClose={() => setDialog(null)}><p className="dialog-copy">Questa azione elimina profilo, piani e allenamenti TempoFit da questo browser. Esporta un backup prima di procedere. Nessun altro dato del browser viene modificato.</p><div className="modal-actions"><button className="button secondary" onClick={() => setDialog(null)}>Annulla</button><button className="button danger" onClick={() => {
+    {dialog === 'reset' && <Modal title="Ripristinare lo spazio locale?" onClose={() => setDialog(null)}><p className="dialog-copy">Questa azione elimina profilo, routine, piani e allenamenti TempoFit dallo spazio senza account di questo browser. Esporta un backup prima di procedere. Nessun altro dato del browser viene modificato.</p><div className="modal-actions"><button className="button secondary" onClick={() => setDialog(null)}>Annulla</button><button className="button danger" onClick={() => {
       if (!workspace.resetGuest()) return
       setDialog(null); navigate('home'); setToast('Spazio locale ripristinato.')
     }}>Elimina dati TempoFit</button></div></Modal>}
@@ -261,6 +396,20 @@ function WorkspaceApp({ workspace }: { workspace: CloudWorkspace }) {
 
 export default function App({ cloudClientFactory }: { cloudClientFactory?: CloudClientFactory } = {}) {
   const workspace = useCloudWorkspace(cloudClientFactory)
+  const recoveryAttempt = useRef<AppData | null>(null)
+  useEffect(() => {
+    if (!workspace.authReady || workspace.busy || workspace.accountChangePending || workspace.storageError
+      || workspace.data.routineHistoryInitialized || recoveryAttempt.current === workspace.data
+      || (workspace.identity && !['synced', 'pending', 'offline'].includes(workspace.status.phase))) return
+    const token = workspace.token()
+    const base = workspace.data
+    queueMicrotask(() => {
+      if (!workspace.isCurrentToken(token) || !workspace.isCurrentData(base)) return
+      recoveryAttempt.current = base
+      try { workspace.setData(recoverHistoryRoutines(base).data) }
+      catch (error) { if (error instanceof Error) workspace.report(`Recupero routine interrotto: ${error.message}`); else throw error }
+    })
+  }, [workspace])
   return <fieldset className="workspace-fields" disabled={workspace.busy} aria-busy={workspace.busy}>
     <WorkspaceApp key={`${workspace.scope}:${workspace.accountChangePending ? 'recovery' : 'ready'}`} workspace={workspace} />
   </fieldset>
