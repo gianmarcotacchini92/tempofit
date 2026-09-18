@@ -172,7 +172,10 @@ modificare le impostazioni di sicurezza del sistema.
   non condividono carichi o grafici. Nome originale, indice della serie e
   provenienza del CSV restano nel backup. Nessuna serie viene tagliata per
   accorpare esercizi diversi. Attivita non supportate (anche Wall Sit) sono
-  segnalate, mai convertite in un altro movimento.
+  segnalate, mai convertite in un altro movimento. Il CSV puo essere importato
+  anche con uno storico gia presente: vengono aggiunte soltanto le sedute con
+  identita di origine nuova, mentre sessioni native e import gia presenti non
+  vengono modificati o duplicati.
 - Le varianti aggiunte per riconoscere gli export sono disponibili nello
   storico, nei progressi e nella libreria; non ampliano automaticamente il
   catalogo usato dal generatore. Le istruzioni indicano questa distinzione.
@@ -320,9 +323,10 @@ Il salvataggio e specifico del browser e dell'origine: `localhost` e `127.0.0.1`
 cosi come porte differenti, hanno archivi separati. Cancellare i dati del sito elimina la copia locale e le modifiche non ancora
 sincronizzate, non la copia gia pubblicata nel proprio account Firebase.
 Esportare periodicamente un backup dal profilo.
-L'importazione JSON o CSV richiede un archivio vuoto per evitare sovrascritture,
-eccetto la procedura guidata di correzione dei vecchi import CSV. Fino alla
-correzione queste sedute restano esportabili e consultabili con un avviso,
+L'importazione di un backup JSON richiede un archivio vuoto per evitare
+sovrascritture. Il CSV e invece incrementale e aggiunge soltanto le sedute
+mancanti; la procedura guidata resta necessaria per correggere i vecchi import
+CSV. Fino alla correzione queste sedute restano esportabili e consultabili con un avviso,
 ma non alimentano grafici per esercizio, distribuzione muscolare o suggerimenti
 di carico. I piani gia generati restano invariati: ricontrollarne i carichi.
 Modifiche rilevate da un'altra scheda bloccano le nuove scritture finche non si

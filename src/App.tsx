@@ -6,7 +6,7 @@ import { Dashboard, ExerciseDetail, ExerciseLibrary, History, NoWorkout, Progres
 import { Modal } from './components'
 import { decodeData, downloadData, MIGRATION_NOTICE } from './storage'
 import type { AppData } from './storage'
-import { importWorkoutCsv } from './csvImport'
+import { importWorkoutCsv, mergeWorkoutCsv } from './csvImport'
 import { repairCsvHistory } from './csvRepair'
 import type { CsvRepairResult } from './csvRepair'
 import { needsCsvRepair, validatePlan, workoutSetSteps } from './domain'
@@ -235,7 +235,7 @@ function WorkspaceApp({ workspace }: { workspace: CloudWorkspace }) {
     if (file.size > 10 * 1024 * 1024) { setToast('Il file supera il limite di 10 MB.'); return }
     try {
       const csv = file.name.toLocaleLowerCase('it').endsWith('.csv') || file.type === 'text/csv'
-      if ((data.active || data.history.length > 0 || data.draft || (!csv && data.routines.length > 0)) && !(csv && legacyCsvCount > 0)) { setToast('Per proteggere i tuoi dati, importa in un archivio vuoto. Esporta prima il backup, poi usa Ripristina.'); return }
+      if (!csv && (data.active || data.history.length > 0 || data.draft || data.routines.length > 0)) { setToast('Per proteggere i tuoi dati, importa il backup JSON in un archivio vuoto. Esporta prima la copia corrente, poi usa Ripristina.'); return }
       if (csv && legacyCsvCount > 0 && storageError) { setToast('Risolvi il blocco di salvataggio prima di correggere lo storico.'); return }
       const content = await file.text()
       if (!workspace.isCurrentToken(scopeToken)) { workspace.report('Cambio account in corso o completato: importazione annullata. Seleziona nuovamente il file nel profilo corretto.'); return }
@@ -250,11 +250,18 @@ function WorkspaceApp({ workspace }: { workspace: CloudWorkspace }) {
           setDialog(null)
           return
         }
-        setData(recoverHistoryRoutines({ ...imported.data, routines: data.routines }).data)
+        const merged = mergeWorkoutCsv(data, imported.data)
+        if (merged.error || !merged.data) { setToast(merged.error ?? 'Non e stato possibile unire lo storico.'); return }
+        if (merged.addedSessions === 0) {
+          setDialog(null)
+          setToast(`Nessuna nuova seduta: ${merged.existingSessions} ${merged.existingSessions === 1 ? 'seduta era gia presente' : 'sedute erano gia presenti'}.`)
+          return
+        }
+        setData(recoverHistoryRoutines(merged.data).data)
         setStorageError(null)
         setDialog(null)
         navigate('history')
-        setToast(`Importate ${imported.importedSessions} sedute e ${imported.importedSets} serie.${imported.skippedRows ? ` Ignorate ${imported.skippedRows} righe di riscaldamento o non leggibili.` : ''}${imported.skippedExercises.length ? ` Esercizi non riconosciuti: ${imported.skippedExercises.slice(0, 3).join(', ')}${imported.skippedExercises.length > 3 ? '…' : ''}.` : ''}`)
+        setToast(`Aggiunte ${merged.addedSessions} ${merged.addedSessions === 1 ? 'seduta' : 'sedute'} e ${merged.addedSets} serie.${merged.existingSessions ? ` ${merged.existingSessions} ${merged.existingSessions === 1 ? 'seduta era gia presente' : 'sedute erano gia presenti'}.` : ''}${imported.skippedRows ? ` Ignorate ${imported.skippedRows} righe di riscaldamento o non leggibili.` : ''}${imported.skippedExercises.length ? ` Esercizi non riconosciuti: ${imported.skippedExercises.slice(0, 3).join(', ')}${imported.skippedExercises.length > 3 ? '…' : ''}.` : ''}`)
         return
       }
       const decoded = decodeData(JSON.parse(content))
@@ -358,7 +365,7 @@ function WorkspaceApp({ workspace }: { workspace: CloudWorkspace }) {
       <div className="settings-content"><CloudAccount workspace={workspace} /><div className="quiet-note"><HardDrive size={22} /><p>{identity ? 'Controlla lo stato Sincronizzato prima di cambiare dispositivo. Le modifiche in attesa sono conservate nella copia locale di questo account. Mantieni anche un backup JSON.' : 'Senza account i dati restano in questo browser e a questo indirizzo. Collega Google per sincronizzarli, oppure conserva un backup JSON.'}</p></div>
         <button className="settings-action" disabled={pwa.installed} onClick={() => { void pwa.install().then((message) => setToast(message)) }}><Smartphone size={21} /><span><strong>{pwa.installed ? 'TempoFit e installata' : 'Installa TempoFit'}</strong><small>{pwa.installed ? 'Si apre dalla schermata Home come un’app autonoma' : 'Aggiungila alla schermata Home e usala senza la barra del browser'}</small></span><ChevronRight size={18} /></button>
         <button className="settings-action" onClick={() => { downloadData(JSON.stringify(data, null, 2), 'tempofit-backup.json'); setToast('Backup esportato.') }}><Download size={21} /><span><strong>Esporta il tuo backup</strong><small>Profilo, routine, piani, sessione attiva e storico in JSON</small></span><ChevronRight size={18} /></button>
-        <button className="settings-action" onClick={() => importInput.current?.click()}><Upload size={21} /><span><strong>{legacyCsvCount > 0 ? 'Correggi storico dal CSV originale' : 'Importa backup o CSV'}</strong><small>{legacyCsvCount > 0 ? 'Ripara solo le vecchie sedute corrispondenti. Non serve cancellare lo storico.' : 'JSON richiede uno spazio vuoto. CSV richiede storico vuoto e mantiene le routine.'}</small></span><ChevronRight size={18} /></button>
+        <button className="settings-action" onClick={() => importInput.current?.click()}><Upload size={21} /><span><strong>{legacyCsvCount > 0 ? 'Correggi storico dal CSV originale' : 'Importa backup o CSV'}</strong><small>{legacyCsvCount > 0 ? 'Ripara solo le vecchie sedute corrispondenti. Non serve cancellare lo storico.' : 'Il CSV aggiunge solo sedute mancanti senza duplicati. Il backup JSON richiede uno spazio vuoto.'}</small></span><ChevronRight size={18} /></button>
         <input className="sr-only" type="file" ref={importInput} accept=".json,.csv,application/json,text/csv" aria-label="Backup JSON o CSV allenamenti" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importData(file); event.target.value = '' }} />
         <div className="settings-divider" /><button className="button danger ghost full" disabled={Boolean(identity) || workspace.accountChangePending} onClick={() => setDialog('reset')}>Ripristina i dati locali</button>
         {identity && <p className="field-help">Esci da Google per ripristinare lo spazio senza account. Questa azione non cancella lo storico nel cloud.</p>}

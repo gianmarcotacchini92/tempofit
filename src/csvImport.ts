@@ -16,6 +16,10 @@ export interface CsvImportResult {
   error: string | null
 }
 
+export type CsvMergeResult =
+  | { error: string; data: null; addedSessions: 0; addedSets: 0; existingSessions: 0 }
+  | { error: null; data: AppData; addedSessions: number; addedSets: number; existingSessions: number }
+
 const MONTHS: Record<string, number> = {
   gen: 0, gennaio: 0, feb: 1, febbraio: 1, mar: 2, marzo: 2, apr: 3, aprile: 3,
   mag: 4, maggio: 4, giu: 5, giugno: 5, lug: 6, luglio: 6, ago: 7, agosto: 7,
@@ -182,4 +186,35 @@ export function importWorkoutCsv(text: string): CsvImportResult {
   const data: AppData = { version: 3, settings: structuredClone(DEFAULT_SETTINGS), draft: null, active: null, history: sessions, restEndsAt: null, routines: [], routineHistoryInitialized: false }
   if (!isAppData(data)) return { data: null, importedSessions: 0, importedSets: 0, skippedSessions: groups.size, skippedExercises: [...skippedExercises], skippedRows, error: 'Il CSV supera i limiti del modello storico. Nessun dato e stato importato.' }
   return { data, importedSessions: sessions.length, importedSets, skippedSessions: groups.size - sessions.length, skippedExercises: [...skippedExercises], skippedRows, error: null }
+}
+
+export function mergeWorkoutCsv(current: AppData, imported: AppData): CsvMergeResult {
+  const existingKeys = new Set(current.history.flatMap((session) => session.importSource?.format === 'hevy-csv' ? [session.importSource.key] : []))
+  const existingIds = new Set(current.history.map((session) => session.id))
+  const additions: WorkoutSession[] = []
+  let existingSessions = 0
+  for (const session of imported.history) {
+    const source = session.importSource
+    if (!source || source.format !== 'hevy-csv' || source.mappingVersion !== 2) {
+      return { error: 'Il CSV contiene sedute senza identita di origine valida. Nessun dato e stato modificato.', data: null, addedSessions: 0, addedSets: 0, existingSessions: 0 }
+    }
+    if (existingKeys.has(source.key)) { existingSessions += 1; continue }
+    if (existingIds.has(session.id)) {
+      return { error: 'Una seduta del CSV usa un identificativo gia presente. Nessun dato e stato modificato.', data: null, addedSessions: 0, addedSets: 0, existingSessions: 0 }
+    }
+    existingKeys.add(source.key)
+    existingIds.add(session.id)
+    additions.push(session)
+  }
+  const data = { ...current, history: [...additions, ...current.history] }
+  if (!isAppData(data)) {
+    return { error: 'Lo storico unito supera i limiti supportati. Nessun dato e stato modificato.', data: null, addedSessions: 0, addedSets: 0, existingSessions: 0 }
+  }
+  return {
+    error: null,
+    data,
+    addedSessions: additions.length,
+    addedSets: additions.reduce((sum, session) => sum + session.logs.length, 0),
+    existingSessions,
+  }
 }

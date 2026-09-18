@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { importWorkoutCsv } from './csvImport.ts'
+import { importWorkoutCsv, mergeWorkoutCsv } from './csvImport.ts'
 import { emptyData, isAppData, decodeData } from './storage.ts'
 import { CSV_EXERCISE_MAP } from './csvExercises.ts'
 import { EXERCISES, getExercise, needsCsvRepair, suggestLoad, generatePlan, DEFAULT_SETTINGS } from './domain.ts'
@@ -68,6 +68,35 @@ test('CSV parsing leaves history untouched and routine extraction is an explicit
   assert.equal(recovered.data.routines[0].plan.exercises[0].restSeconds, imported.history[0].plan.exercises[0].restSeconds)
   assert.equal(recovered.data.routines[0].plan.exercises[0].rir, imported.history[0].plan.exercises[0].rir)
   assert.equal(isAppData(recovered.data), true)
+})
+
+test('CSV merge adds only missing source sessions and preserves current work', () => {
+  const imported = importWorkoutCsv([
+    header,
+    row('Bench Press (Barbell)', 60, 0, 'Petto A'),
+    row('T Bar Row', 50, 0, 'Dorso B').replaceAll('8 set 2026', '9 set 2026'),
+  ].join('\n')).data
+  const current = {
+    ...emptyData(),
+    settings: { ...emptyData().settings, minutes: 90 },
+    history: [structuredClone(imported.history[0])],
+    draft: structuredClone(imported.history[0].plan),
+  }
+  const merged = mergeWorkoutCsv(current, imported)
+  assert.equal(merged.error, null)
+  assert.equal(merged.addedSessions, 1)
+  assert.equal(merged.addedSets, 1)
+  assert.equal(merged.existingSessions, 1)
+  assert.equal(merged.data.settings.minutes, 90)
+  assert.deepEqual(merged.data.draft, current.draft)
+  assert.deepEqual(merged.data.history.slice(1), current.history)
+  assert.equal(new Set(merged.data.history.map((session) => session.importSource.key)).size, 2)
+  const repeated = mergeWorkoutCsv(merged.data, imported)
+  assert.equal(repeated.error, null)
+  assert.equal(repeated.addedSessions, 0)
+  assert.equal(repeated.addedSets, 0)
+  assert.equal(repeated.existingSessions, 2)
+  assert.deepEqual(repeated.data, merged.data)
 })
 
 test('rejects malformed or non-importable CSV without producing partial app data', () => {

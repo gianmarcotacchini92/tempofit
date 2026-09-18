@@ -106,7 +106,7 @@ test('CSV repair requires a backup and confirmation, preserves native work, and 
   await page.getByRole('button', { name: 'Successivo', exact: true }).click()
   await expect(page.locator('.chart-detail-value')).toHaveText('120 kg')
   await selectRepair(page)
-  await expect(page.locator('.toast')).toContainText('archivio vuoto')
+  await expect(page.locator('.toast')).toContainText('Nessuna nuova seduta')
   expect(await page.evaluate((key) => JSON.parse(localStorage.getItem(key)!), STORAGE_KEY)).toEqual(repaired)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   expect(errors).toEqual([])
@@ -123,6 +123,31 @@ test('new CSV imports preserve source names and distinct exercise weights', asyn
   await page.reload()
   await navigate(page, 'Progressi')
   await expect(page.getByLabel('Esercizio del grafico').locator('option')).toHaveCount(2)
+})
+
+test('CSV import is incremental, preserves native history and skips duplicate source sessions', async ({ page }) => {
+  const imported = importWorkoutCsv(csv).data!
+  const existing = structuredClone(imported.history[0])
+  const native = structuredClone(existing)
+  native.id = 'native-session'
+  delete native.importSource
+  native.plan.id = 'native-plan'
+  native.plan.name = 'Sessione TempoFit'
+  const current = { ...emptyData(), settings: { ...emptyData().settings, minutes: 90 }, history: [native, existing] }
+  await open(page, current)
+  await selectRepair(page)
+  await expect(page.locator('.toast')).toContainText('Nessuna nuova seduta')
+  expect((await page.evaluate((key) => JSON.parse(localStorage.getItem(key)!), STORAGE_KEY)).history).toEqual(current.history)
+
+  const extraRows = csv.split('\n').slice(1).join('\n').replaceAll('Seduta esempio', 'Seduta nuova').replaceAll('8 set 2026', '9 set 2026')
+  await page.getByRole('button', { name: 'Impostazioni e backup' }).click()
+  await page.getByLabel('Backup JSON o CSV allenamenti').setInputFiles({ ...file, buffer: Buffer.from(`${csv}\n${extraRows}`) })
+  await expect(page.locator('.toast')).toContainText('Aggiunte 1 seduta e 2 serie')
+  const merged = await page.evaluate((key) => JSON.parse(localStorage.getItem(key)!), STORAGE_KEY)
+  expect(merged.history).toHaveLength(3)
+  expect(merged.history.filter((session: WorkoutSession) => session.id === 'native-session')).toHaveLength(1)
+  expect(merged.settings.minutes).toBe(90)
+  expect(new Set(merged.history.flatMap((session: WorkoutSession) => session.importSource ? [session.importSource.key] : [])).size).toBe(2)
 })
 
 test('unrelated CSV files and changes in another tab cannot overwrite history through repair', async ({ page, context }) => {
