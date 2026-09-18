@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowUpRight, BookOpen, BookmarkPlus, Check, ChevronRight, CircleHelp, Download, Dumbbell, HardDrive, History as HistoryIcon, LayoutDashboard, LockKeyhole, Menu, Settings2, TrendingUp, Upload, X, Zap } from 'lucide-react'
+import { ArrowUpRight, BookOpen, BookmarkPlus, Check, ChevronRight, CircleHelp, Download, Dumbbell, HardDrive, History as HistoryIcon, LayoutDashboard, LockKeyhole, Menu, Settings2, Smartphone, TrendingUp, Upload, X, Zap } from 'lucide-react'
 import { Configurator } from './Configurator'
 import { ActiveWorkout, WorkoutEditor } from './Workout'
 import { Dashboard, ExerciseDetail, ExerciseLibrary, History, NoWorkout, Progress } from './Screens'
@@ -20,6 +20,7 @@ import { canonicalJson } from './cloudModel'
 import { blankRoutine, extractHistoryRoutines, instantiateRoutine, normalizeRoutineName, recoverHistoryRoutines, routineFromPlan, addRoutineExercise, moveRoutineExercise, setRoutineExercises } from './routines'
 import type { WorkoutRoutine } from './routines'
 import { RoutineEditor, RoutineExercisePicker, RoutineLibrary, RoutineSettingsDialog } from './RoutineScreens'
+import { usePwaInstall } from './pwa'
 import './App.css'
 
 type View = 'home' | 'workout' | 'routines' | 'exercises' | 'history' | 'progress'
@@ -35,6 +36,7 @@ const navigation = [
 
 function WorkspaceApp({ workspace }: { workspace: CloudWorkspace }) {
   const { data, setData, storageError, setStorageError } = workspace
+  const pwa = usePwaInstall()
   const [view, setView] = useState<View>(data.active ? 'workout' : 'home')
   const [config, setConfig] = useState<WorkoutSettings | null>(null)
   const [configTarget, setConfigTarget] = useState<'workout' | 'routine'>('workout')
@@ -354,6 +356,7 @@ function WorkspaceApp({ workspace }: { workspace: CloudWorkspace }) {
     {inspecting && <Modal title={inspecting.name} onClose={() => setInspecting(null)}><ExerciseDetail exercise={inspecting} /></Modal>}
     {dialog === 'settings' && <Modal title="Il tuo spazio personale." subtitle={identity ? 'Account Google, sincronizzazione e backup.' : 'Accesso Google facoltativo. I dati locali restano tuoi.'} onClose={() => setDialog(null)}>
       <div className="settings-content"><CloudAccount workspace={workspace} /><div className="quiet-note"><HardDrive size={22} /><p>{identity ? 'Controlla lo stato Sincronizzato prima di cambiare dispositivo. Le modifiche in attesa sono conservate nella copia locale di questo account. Mantieni anche un backup JSON.' : 'Senza account i dati restano in questo browser e a questo indirizzo. Collega Google per sincronizzarli, oppure conserva un backup JSON.'}</p></div>
+        <button className="settings-action" disabled={pwa.installed} onClick={() => { void pwa.install().then((message) => setToast(message)) }}><Smartphone size={21} /><span><strong>{pwa.installed ? 'TempoFit e installata' : 'Installa TempoFit'}</strong><small>{pwa.installed ? 'Si apre dalla schermata Home come un’app autonoma' : 'Aggiungila alla schermata Home e usala senza la barra del browser'}</small></span><ChevronRight size={18} /></button>
         <button className="settings-action" onClick={() => { downloadData(JSON.stringify(data, null, 2), 'tempofit-backup.json'); setToast('Backup esportato.') }}><Download size={21} /><span><strong>Esporta il tuo backup</strong><small>Profilo, routine, piani, sessione attiva e storico in JSON</small></span><ChevronRight size={18} /></button>
         <button className="settings-action" onClick={() => importInput.current?.click()}><Upload size={21} /><span><strong>{legacyCsvCount > 0 ? 'Correggi storico dal CSV originale' : 'Importa backup o CSV'}</strong><small>{legacyCsvCount > 0 ? 'Ripara solo le vecchie sedute corrispondenti. Non serve cancellare lo storico.' : 'JSON richiede uno spazio vuoto. CSV richiede storico vuoto e mantiene le routine.'}</small></span><ChevronRight size={18} /></button>
         <input className="sr-only" type="file" ref={importInput} accept=".json,.csv,application/json,text/csv" aria-label="Backup JSON o CSV allenamenti" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importData(file); event.target.value = '' }} />

@@ -51,6 +51,9 @@ test('dashboard is original, empty, responsive, and has working navigation', asy
   await expect(page.getByText('Nessun esercizio trovato.')).toBeVisible()
   await navigate(page, 'Progressi')
   await expect(page.getByText('Niente numeri inventati.')).toBeVisible()
+  await page.getByRole('button', { name: 'Impostazioni e backup' }).click()
+  await page.getByRole('button', { name: /Installa TempoFit/ }).click()
+  await expect(page.getByRole('status')).toContainText(/Installa app|Aggiungi alla schermata Home/)
   expect(errors).toEqual([])
 })
 

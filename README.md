@@ -14,6 +14,17 @@ personale. Senza account i dati rimangono nel browser, separati per indirizzo.
 Per trasferirli da un'altra origine si puo collegare lo stesso account Google
 oppure esportare un backup JSON e importarlo in un archivio vuoto.
 
+## Installazione sul telefono
+
+TempoFit e una Progressive Web App. Da **Impostazioni e backup** scegliere
+**Installa TempoFit**. Su Android il browser mostra il prompt **Installa app**;
+su iPhone aprire il sito in Safari e usare **Condividi > Aggiungi alla schermata
+Home**. L'icona installata apre TempoFit senza la barra del browser.
+
+Il service worker conserva l'interfaccia gia visitata per consentirne l'avvio
+anche senza rete. I dati restano nel browser e, se e collegato Google, vengono
+sincronizzati con Firebase quando torna la connessione.
+
 ## Account Google e sincronizzazione
 
 Aprire **Il tuo profilo**, oppure il pulsante del profilo in alto a destra,
