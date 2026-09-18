@@ -51,7 +51,7 @@
 .routine-save-copy { margin-bottom: 10px; }
 .routine-entry-action { margin-top: 12px; }
 .routine-picker { margin-top: 18px; }
-.history-routine-action { grid-column: 1 / -1; justify-self: start; margin-top: 8px; }
+.history-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
 .sidebar { position: fixed; inset: 0 auto 0 0; width: 238px; padding: 34px 20px 16px; background: #151619; border-right: 1px solid #26272b; display: flex; flex-direction: column; z-index: 30; overflow-y: auto; }
 .brand { display: flex; align-items: center; gap: 10px; padding: 0 10px; border: 0; background: transparent; font-family: 'Manrope', sans-serif; font-size: 28px; font-weight: 800; letter-spacing: -1.3px; text-align: left; }
 .brand-mark { display: grid; place-items: center; width: 37px; height: 39px; border-radius: 12px; background: var(--accent); color: #252d1c; }

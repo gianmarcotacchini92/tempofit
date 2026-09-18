@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowRight, ArrowUpRight, BookmarkPlus, CalendarDays, ChartNoAxesCombined, Check, ChevronRight, Clock3, Dumbbell, Flame, MoveUpRight, Plus, Search, Sparkles, Target, TrendingUp, Zap } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, BookmarkPlus, CalendarDays, ChartNoAxesCombined, Check, ChevronRight, Clock3, Dumbbell, Flame, MoveUpRight, Plus, Search, Sparkles, Target, Trash2, TrendingUp, Zap } from 'lucide-react'
 import { EXERCISES, EQUIPMENT_LABELS, GOAL_LABELS, MUSCLE_LABELS, getExercise, needsCsvRepair, workoutSetSteps } from './domain'
 import type { Equipment, Exercise, Muscle, WorkoutSession, WorkoutSettings } from './domain'
 import { ExerciseArtwork, ExerciseIllustration, HeroArtwork } from './components'
@@ -92,7 +92,7 @@ export function ExerciseLibrary({ equipment, onInspect }: { equipment: Equipment
   </>
 }
 
-export function History({ history, onCreate, onInspect, onSaveRoutine }: { history: WorkoutSession[]; onCreate: () => void; onInspect: (exercise: Exercise) => void; onSaveRoutine?: (session: WorkoutSession) => void }) {
+export function History({ history, onCreate, onInspect, onSaveRoutine, onDelete }: { history: WorkoutSession[]; onCreate: () => void; onInspect: (exercise: Exercise) => void; onSaveRoutine?: (session: WorkoutSession) => void; onDelete?: (session: WorkoutSession) => void }) {
   return <><div className="page-heading"><div><span className="eyebrow">IL LAVORO RESTA</span><h1>Il tuo percorso<span className="accent">.</span></h1><p>Sessioni reali. Anche quelle piu brevi del previsto.</p></div><button className="button primary compact" onClick={onCreate}><Plus size={18} /> Nuovo workout</button></div>
     {history.length === 0 ? <div className="panel empty-state"><CalendarDays size={36} strokeWidth={1.5} /><h2>Il primo capitolo e da scrivere.</h2><p>Qui ritroverai serie, ripetizioni e carichi di ogni allenamento salvato.</p><button className="button primary" onClick={onCreate}>Crea il primo allenamento <ArrowRight size={17} /></button></div>
       : <div className="history-list">{history.slice().sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt)).map((session) => {
@@ -106,7 +106,8 @@ export function History({ history, onCreate, onInspect, onSaveRoutine }: { histo
             return <div className="history-exercise" key={item.id}><div className="history-exercise-heading"><button className="exercise-image-button" aria-label={`Mostra illustrazione di ${exercise.name}`} disabled={unverified} onClick={() => onInspect(exercise)}><ExerciseArtwork small exercise={unverified ? undefined : exercise} /></button><h4>{unverified ? 'Associazione da correggere: ' : ''}{exercise.name}</h4></div>
               {!unverified && <TechniqueNote item={item} plan={session.plan} />}
               {item.sourceExerciseName && <p className="muted">Nome nel CSV: {item.sourceExerciseName}</p>}{logs.length ? logs.map((log) => <p key={log.id}><span>{setLabel(log)}</span><strong>{log.weight === null ? 'Carico non registrato' : `${log.weight} kg`} / {log.reps} rip.</strong><span>{log.rir === null ? 'RIR --' : `RIR ${log.rir}`}</span></p>) : <p className="muted">Non eseguito</p>}</div>
-          })}{onSaveRoutine && <button className="button secondary compact history-routine-action" disabled={needsCsvRepair(session) || !session.logs.some((log) => !log.part)} onClick={() => onSaveRoutine(session)}><BookmarkPlus size={16} /> Salva questa seduta come routine</button>}</div>
+          })}<div className="history-actions">{onSaveRoutine && <button className="button secondary compact" disabled={needsCsvRepair(session) || !session.logs.some((log) => !log.part)} onClick={() => onSaveRoutine(session)}><BookmarkPlus size={16} /> Salva questa seduta come routine</button>}
+            {onDelete && <button className="button danger ghost compact" onClick={() => onDelete(session)}><Trash2 size={16} /> Elimina dallo storico</button>}</div></div>
         </details>
       })}</div>}
   </>

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowUpRight, BookOpen, BookmarkPlus, Check, ChevronRight, CircleHelp, Download, Dumbbell, HardDrive, History as HistoryIcon, LayoutDashboard, LockKeyhole, Menu, Settings2, Smartphone, TrendingUp, Upload, X, Zap } from 'lucide-react'
+import { ArrowUpRight, BookOpen, BookmarkPlus, Check, ChevronRight, CircleHelp, Download, Dumbbell, HardDrive, History as HistoryIcon, LayoutDashboard, LockKeyhole, Menu, Settings2, Smartphone, Trash2, TrendingUp, Upload, X, Zap } from 'lucide-react'
 import { Configurator } from './Configurator'
 import { ActiveWorkout, WorkoutEditor } from './Workout'
 import { Dashboard, ExerciseDetail, ExerciseLibrary, History, NoWorkout, Progress } from './Screens'
@@ -11,7 +11,7 @@ import { repairCsvHistory } from './csvRepair'
 import type { CsvRepairResult } from './csvRepair'
 import { needsCsvRepair, validatePlan, workoutSetSteps } from './domain'
 import type { Exercise, SetLog, WorkoutPlan, WorkoutSession, WorkoutSettings } from './domain'
-import { loggedSetsLabel } from './format'
+import { dateLabel, loggedSetsLabel } from './format'
 import { CloudAccount } from './CloudAccount'
 import { useCloudWorkspace } from './useCloudWorkspace'
 import type { CloudWorkspace } from './useCloudWorkspace'
@@ -42,6 +42,7 @@ function WorkspaceApp({ workspace }: { workspace: CloudWorkspace }) {
   const [configTarget, setConfigTarget] = useState<'workout' | 'routine'>('workout')
   const [routineEdit, setRoutineEdit] = useState<{ initial: WorkoutRoutine; original?: WorkoutRoutine; token: number } | null>(null)
   const [pendingRoutineDelete, setPendingRoutineDelete] = useState<WorkoutRoutine | null>(null)
+  const [pendingHistoryDelete, setPendingHistoryDelete] = useState<WorkoutSession | null>(null)
   const [pendingRoutineUse, setPendingRoutineUse] = useState<{ routine: WorkoutRoutine; draft: WorkoutPlan } | null>(null)
   const [draftTools, setDraftTools] = useState<{ kind: 'settings' | 'add'; base: WorkoutPlan } | null>(null)
   const [dialog, setDialog] = useState<Dialog>(null)
@@ -336,7 +337,7 @@ function WorkspaceApp({ workspace }: { workspace: CloudWorkspace }) {
               openRoutineEditor({ ...copy, name, plan: { ...copy.plan, name }, refreshLoads: routine.refreshLoads })
             }} />)}
         {view === 'exercises' && <ExerciseLibrary equipment={data.settings.equipment} onInspect={setInspecting} />}
-        {view === 'history' && <History history={data.history} onCreate={() => configure()} onInspect={setInspecting} onSaveRoutine={saveHistoryRoutine} />}
+        {view === 'history' && <History history={data.history} onCreate={() => configure()} onInspect={setInspecting} onSaveRoutine={saveHistoryRoutine} onDelete={setPendingHistoryDelete} />}
         {view === 'progress' && <Progress history={data.history} onInspect={setInspecting} />}
         <footer className="page-footer"><span>Fatto per il tuo ritmo. <a href={`${import.meta.env.BASE_URL}exercises/ATTRIBUTION.json`} target="_blank" rel="noreferrer">Crediti illustrazioni</a></span><span>TempoFit <span className="accent">/</span> {identity ? 'Google + Firebase' : 'Modalita locale'}</span></footer>
       </main>
@@ -360,6 +361,18 @@ function WorkspaceApp({ workspace }: { workspace: CloudWorkspace }) {
         setPendingRoutineDelete(null)
         setToast('Routine eliminata. Allenamenti e storico conservati.')
       }}>Elimina routine</button></div></Modal>}
+    {pendingHistoryDelete && <Modal title="Eliminare questo allenamento?" onClose={() => setPendingHistoryDelete(null)}>
+      <p className="dialog-copy"><strong>{pendingHistoryDelete.plan.name}</strong><br />{dateLabel(pendingHistoryDelete.startedAt)} / {Math.max(0, Math.round((Date.parse(pendingHistoryDelete.finishedAt!) - Date.parse(pendingHistoryDelete.startedAt)) / 60000))} min / {loggedSetsLabel(pendingHistoryDelete.logs)}{pendingHistoryDelete.logs.length < workoutSetSteps(pendingHistoryDelete.plan).length ? ' / Parziale' : ''}</p>
+      <p className="dialog-copy">La seduta verra rimossa dallo storico, dai progressi e dalla sincronizzazione Firebase. Le routine, il piano preparato e l'eventuale sessione in corso non cambiano. L'operazione non puo essere annullata.</p>
+      <div className="modal-actions"><button className="button secondary" onClick={() => setPendingHistoryDelete(null)}>Annulla</button><button className="button danger" disabled={Boolean(storageError)} onClick={() => {
+        const latest = workspace.currentData()
+        const stored = latest.history.find((session) => session.id === pendingHistoryDelete.id)
+        if (!stored || canonicalJson(stored) !== canonicalJson(pendingHistoryDelete)) { setToast('L’allenamento e cambiato o non esiste piu. Riapri lo storico prima di eliminarlo.'); setPendingHistoryDelete(null); return }
+        setData({ ...latest, history: latest.history.filter((session) => session.id !== stored.id) })
+        setPendingHistoryDelete(null)
+        setToast('Allenamento eliminato dallo storico.')
+      }}><Trash2 size={17} /> Elimina allenamento</button></div>
+    </Modal>}
     {inspecting && <Modal title={inspecting.name} onClose={() => setInspecting(null)}><ExerciseDetail exercise={inspecting} /></Modal>}
     {dialog === 'settings' && <Modal title="Il tuo spazio personale." subtitle={identity ? 'Account Google, sincronizzazione e backup.' : 'Accesso Google facoltativo. I dati locali restano tuoi.'} onClose={() => setDialog(null)}>
       <div className="settings-content"><CloudAccount workspace={workspace} /><div className="quiet-note"><HardDrive size={22} /><p>{identity ? 'Controlla lo stato Sincronizzato prima di cambiare dispositivo. Le modifiche in attesa sono conservate nella copia locale di questo account. Mantieni anche un backup JSON.' : 'Senza account i dati restano in questo browser e a questo indirizzo. Collega Google per sincronizzarli, oppure conserva un backup JSON.'}</p></div>
