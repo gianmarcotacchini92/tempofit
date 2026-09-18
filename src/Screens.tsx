@@ -5,6 +5,8 @@ import type { Equipment, Exercise, Muscle, WorkoutSession, WorkoutSettings } fro
 import { ExerciseArtwork, ExerciseIllustration, HeroArtwork } from './components'
 import { dateLabel, loggedSetsLabel, regularSetCount, setLabel, timeLabel } from './format'
 import { ProgressChart } from './ProgressChart'
+import { ENERGY_RANGES, muscleSetDistribution } from './progress'
+import type { EnergyRange } from './progress'
 import { TechniqueNote } from './Intensity'
 
 function startOfWeek() {
@@ -111,21 +113,22 @@ export function History({ history, onCreate, onInspect, onSaveRoutine }: { histo
 }
 
 export function Progress({ history, onInspect }: { history: WorkoutSession[]; onInspect: (exercise: Exercise) => void }) {
-  const trustedHistory = history.filter((session) => !needsCsvRepair(session))
-  const muscleSets = (Object.keys(MUSCLE_LABELS) as Muscle[]).map((muscle) => ({ muscle, sets: trustedHistory.reduce((sum, session) =>
-    sum + session.logs.filter((log) => {
-      if (log.part) return false
-      const item = session.plan.exercises.find((exercise) => exercise.id === log.planExerciseId)
-      return item ? getExercise(item.exerciseId).muscles.includes(muscle) : false
-    }).length, 0) }))
-  const maxSets = Math.max(1, ...muscleSets.map((item) => item.sets))
+  const [energyRange, setEnergyRange] = useState<EnergyRange>('1w')
+  const muscleSets = muscleSetDistribution(history, energyRange)
+  const totalSets = muscleSets.reduce((sum, item) => sum + item.sets, 0)
+  const hasUntrustedHistory = history.some(needsCsvRepair)
+  const rangeLabel = ENERGY_RANGES.find((option) => option.id === energyRange)!.label.toLocaleLowerCase('it')
   return <><div className="page-heading"><div><span className="eyebrow">GUARDA QUANTA STRADA FAI</span><h1>Piccoli passi. Dati reali<span className="accent">.</span></h1><p>Il confronto giusto e con il tuo allenamento precedente.</p></div></div>
     <div className="stat-grid"><Metric icon={<Dumbbell size={20} />} label="Sessioni salvate" value={String(history.length)} detail="incluse le parziali" color="green" />
       <Metric icon={<Target size={20} />} label="Serie registrate" value={String(history.reduce((sum, session) => sum + regularSetCount(session.logs), 0))} detail="mini-serie escluse" color="purple" />
       <Metric icon={<Clock3 size={20} />} label="Tempo totale" value={String(history.reduce((sum, session) => sum + sessionMinutes(session), 0))} unit="min" detail="dedicati a te" color="peach" /></div>
-    <div className="progress-grid"><ProgressChart history={history} onInspect={onInspect} /><section className="panel distribution-panel"><div className="section-heading"><div><h3>Dove hai messo energia</h3><p>Serie per muscolo principale / {trustedHistory.length < history.length ? 'escluse le associazioni CSV da correggere' : 'tutto lo storico'}</p></div></div>
-      <div className="muscle-bars">{muscleSets.map(({ muscle, sets }) => <div key={muscle}><div><span>{MUSCLE_LABELS[muscle]}</span><strong>{sets}</strong></div><div className="distribution-track"><span style={{ width: `${sets / maxSets * 100}%` }} /></div></div>)}</div>
-      <p className="field-help">Il coinvolgimento secondario non viene contato. Una serie puo coinvolgere piu muscoli principali.</p>
+    <div className="progress-grid"><ProgressChart history={history} onInspect={onInspect} /><section className="panel distribution-panel"><div className="section-heading"><div><h3>Dove hai messo energia</h3><p>{totalSets} {totalSets === 1 ? 'serie registrata' : 'serie registrate'} / {rangeLabel}</p></div></div>
+      <div className="chart-controls energy-periods" role="group" aria-label="Periodo distribuzione serie">{ENERGY_RANGES.map((option) =>
+        <button type="button" className={`chip ${energyRange === option.id ? 'selected' : ''}`} aria-pressed={energyRange === option.id} key={option.id} onClick={() => setEnergyRange(option.id)}>{option.label}</button>)}</div>
+      {muscleSets.length > 0 ? <div className="muscle-bars">{muscleSets.map(({ muscle, sets, percentage }) => <div key={muscle}><div><span>{MUSCLE_LABELS[muscle]}</span><strong>{sets} {sets === 1 ? 'serie' : 'serie'} / {percentage.toLocaleString('it-IT', { maximumFractionDigits: 1 })}%</strong></div><div className="distribution-track"><span style={{ width: `${percentage}%` }} /></div></div>)}</div>
+        : <div className="distribution-empty"><Flame size={25} /><p>Nessuna serie registrata in questo periodo.</p></div>}
+      <p className="field-help">Ogni serie completa viene attribuita solo al muscolo principale dell'esercizio. Il coinvolgimento secondario non viene contato.</p>
+      {hasUntrustedHistory && <p className="field-help">Le sedute con vecchie associazioni CSV da correggere sono escluse.</p>}
       {history.some((session) => session.logs.some((log) => log.part)) && <p className="field-help">Drop e rest-pause sono mini-serie aggiuntive: restano nello storico e nei volumi del grafico, senza essere contate come serie complete.</p>}
     </section></div>
   </>

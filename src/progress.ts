@@ -1,5 +1,5 @@
 import { getExercise, isBodyweightExercise, needsCsvRepair } from './domain.ts'
-import type { Exercise, SetLog, WorkoutSession } from './domain.ts'
+import type { Exercise, Muscle, SetLog, WorkoutSession } from './domain.ts'
 
 export const PROGRESS_RANGES = [
   { id: '3m', label: '3 mesi', months: 3 },
@@ -9,6 +9,12 @@ export const PROGRESS_RANGES = [
 ] as const
 export type ProgressRange = typeof PROGRESS_RANGES[number]['id']
 export type ProgressMetric = 'weight' | 'oneRepMax' | 'volume'
+export const ENERGY_RANGES = [
+  { id: '1w', label: 'Settimana' },
+  { id: '1m', label: 'Mese' },
+  ...PROGRESS_RANGES,
+] as const
+export type EnergyRange = typeof ENERGY_RANGES[number]['id']
 export const PROGRESS_METRICS: { id: ProgressMetric; label: string; unit: string; description: string }[] = [
   { id: 'weight', label: 'Peso utilizzato', unit: 'kg', description: 'Il carico piu pesante registrato in ogni sessione' },
   { id: 'oneRepMax', label: 'Carico massimale', unit: 'kg', description: '1RM stimato: la migliore stima di ogni sessione, non un massimale misurato' },
@@ -23,6 +29,12 @@ export interface ProgressPoint {
   value: number
 }
 
+export interface MuscleSetDistribution {
+  muscle: Muscle
+  sets: number
+  percentage: number
+}
+
 export function progressStart(range: ProgressRange, now: Date): number {
   const months = PROGRESS_RANGES.find((option) => option.id === range)!.months
   if (months === null) return -Infinity
@@ -35,6 +47,43 @@ export function progressStart(range: ProgressRange, now: Date): number {
   const lastDay = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate()
   start.setDate(Math.min(day, lastDay))
   return start.getTime()
+}
+
+export function energyStart(range: EnergyRange, now: Date): number {
+  if (range === 'max') return -Infinity
+  const start = new Date(now)
+  start.setHours(0, 0, 0, 0)
+  if (range === '1w') {
+    start.setDate(start.getDate() - 7)
+    return start.getTime()
+  }
+  const months = range === '1m' ? 1 : PROGRESS_RANGES.find((option) => option.id === range)!.months!
+  const day = start.getDate()
+  start.setDate(1)
+  start.setMonth(start.getMonth() - months)
+  const lastDay = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate()
+  start.setDate(Math.min(day, lastDay))
+  return start.getTime()
+}
+
+export function muscleSetDistribution(history: WorkoutSession[], range: EnergyRange, now = new Date()): MuscleSetDistribution[] {
+  const start = energyStart(range, now)
+  const counts = new Map<Muscle, number>()
+  for (const session of history) {
+    const startedAt = Date.parse(session.startedAt)
+    if (needsCsvRepair(session) || session.finishedAt === null || startedAt < start || startedAt > now.getTime()) continue
+    const exercises = new Map(session.plan.exercises.map((item) => [item.id, item]))
+    for (const log of session.logs) {
+      if (log.part !== undefined) continue
+      const item = exercises.get(log.planExerciseId)
+      if (!item) continue
+      const primary = getExercise(item.exerciseId).muscles[0]
+      if (primary) counts.set(primary, (counts.get(primary) ?? 0) + 1)
+    }
+  }
+  const total = [...counts.values()].reduce((sum, sets) => sum + sets, 0)
+  return [...counts].map(([muscle, sets]) => ({ muscle, sets, percentage: total ? sets / total * 100 : 0 }))
+    .sort((a, b) => b.sets - a.sets || a.muscle.localeCompare(b.muscle))
 }
 
 export function estimatedOneRepMax(exercise: Exercise, log: Pick<SetLog, 'weight' | 'reps' | 'part'>): number | null {

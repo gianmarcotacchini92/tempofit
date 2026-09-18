@@ -89,7 +89,7 @@ test('progress handles old-only data, a single zero, missing weight, and unsuppo
     session('bodyweight', new Date(2026, 8, 1), 'pull-up', [0, null]),
   ])
   await expect(page.getByText('Nessun dato per questa selezione.')).toBeVisible()
-  await page.getByRole('button', { name: 'Max', exact: true }).click()
+  await page.getByRole('group', { name: 'Periodo del grafico' }).getByRole('button', { name: 'Max', exact: true }).click()
   await expect(page.locator('.chart-point')).toHaveCount(1)
   await page.getByRole('button', { name: 'Successivo', exact: true }).click()
   await expect(page.locator('.chart-detail-value')).toHaveText('20,25 kg')
@@ -107,5 +107,31 @@ test('progress handles old-only data, a single zero, missing weight, and unsuppo
   await expect(page.locator('.chart-point')).toHaveCount(1)
   await page.getByRole('button', { name: 'Successivo', exact: true }).click()
   await expect(page.locator('.chart-detail-value')).toHaveText('0 kg × rip.')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+})
+
+test('energy distribution filters completed sets by period and attributes each set only to the primary muscle', async ({ page }) => {
+  const history = [
+    session('chest-week', new Date(2026, 8, 8), 'barbell-bench', [80, 70]),
+    session('back-week', new Date(2026, 8, 3), 'barbell-row', [50]),
+    session('biceps-month', new Date(2026, 7, 20), 'db-curl', [20, 20, 20]),
+    session('legs-quarter', new Date(2026, 6, 1), 'barbell-squat', [100, 100, 100, 100]),
+    session('shoulders-year', new Date(2026, 0, 1), 'barbell-overhead-press', [40, 40, 40, 40, 40]),
+    session('triceps-old', new Date(2024, 0, 1), 'cable-triceps', [25, 25, 25, 25, 25, 25]),
+  ]
+  await openProgress(page, history)
+  const periods = page.getByRole('group', { name: 'Periodo distribuzione serie' })
+  await expect(periods.getByRole('button', { name: 'Settimana', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('.distribution-panel')).toContainText('3 serie registrate / settimana')
+  await expect(page.locator('.muscle-bars')).toContainText('Petto2 serie / 66,7%')
+  await expect(page.locator('.muscle-bars')).toContainText('Schiena1 serie / 33,3%')
+  await periods.getByRole('button', { name: 'Mese', exact: true }).click()
+  await expect(page.locator('.distribution-panel')).toContainText('6 serie registrate / mese')
+  await expect(page.locator('.muscle-bars')).toContainText('Bicipiti3 serie / 50%')
+  for (const [label, total] of [['3 mesi', 10], ['6 mesi', 10], ['1 anno', 15], ['Max', 21]] as const) {
+    await periods.getByRole('button', { name: label, exact: true }).click()
+    await expect(page.locator('.distribution-panel')).toContainText(`${total} serie registrate`)
+  }
+  await expect(page.locator('.muscle-bars').locator(':scope > div').first()).toContainText('Tricipiti')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })

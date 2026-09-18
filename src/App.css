@@ -460,11 +460,15 @@ summary::-webkit-details-marker { display: none; }
 .chart-empty { display: flex; min-height: 240px; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 15px; color: #98a78a; }
 .chart-empty h4 { font-size: 14px; font-weight: 500; color: #d4dbcf; }
 .chart-empty p { font-size: 12px; line-height: 1.8; color: #9da7b3; max-width: 260px; }
+.energy-periods { margin: 20px 0 4px; }
+.energy-periods .chip { min-width: 76px; }
 .muscle-bars { display: grid; gap: 18px; margin-top: 25px; }
 .muscle-bars > div > div:first-child { display: flex; justify-content: space-between; font-size: 11px; color: #afb7c1; margin-bottom: 8px; }
 .muscle-bars strong { font-weight: 500; color: #d6e7c2; }
 .distribution-track { height: 5px; background: #2e333b; border-radius: 4px; overflow: hidden; }
 .distribution-track > span { height: 100%; display: block; background: #b5ce96; border-radius: 4px; min-width: 0; }
+.distribution-empty { min-height: 180px; display: grid; place-content: center; justify-items: center; gap: 12px; color: #98a78a; text-align: center; }
+.distribution-empty p { font-size: 12px; color: var(--muted); }
 .distribution-panel > .field-help { margin-top: 23px; }
 
 @media (min-width: 1600px) {

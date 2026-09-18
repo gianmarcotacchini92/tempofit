@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { DEFAULT_SETTINGS, getExercise } from './domain.ts'
-import { estimatedOneRepMax, progressPoints, progressStart } from './progress.ts'
+import { energyStart, estimatedOneRepMax, muscleSetDistribution, progressPoints, progressStart } from './progress.ts'
 
 const now = new Date(2026, 8, 9, 18)
 function session(id, date, weights = [80, 70], exerciseId = 'barbell-bench') {
@@ -90,4 +90,30 @@ test('empty, unfinished, future and unlogged sessions do not invent points', () 
   const future = session('future', new Date(2027, 0, 1))
   const unlogged = { ...session('empty', new Date(2026, 8, 1)), logs: [] }
   assert.deepEqual(progressPoints([unfinished, future, unlogged], 'barbell-bench', 'max', 'weight', now), [])
+})
+
+test('energy ranges count completed regular sets once on the primary muscle', () => {
+  assert.equal(energyStart('1w', now), new Date(2026, 8, 2).getTime())
+  assert.equal(energyStart('1m', now), new Date(2026, 7, 9).getTime())
+  const chest = session('chest', new Date(2026, 8, 8), [80, 70])
+  chest.logs.push({ ...chest.logs[0], id: 'drop', part: 'drop' })
+  const back = session('back', new Date(2026, 8, 3), [50], 'barbell-row')
+  const older = session('older', new Date(2026, 7, 20), [25, 25, 25], 'db-curl')
+  const future = session('future', new Date(2026, 8, 10), [100])
+  const unfinished = { ...session('unfinished', new Date(2026, 8, 8), [100]), finishedAt: null }
+  const ambiguous = session('imported-session-legacy', new Date(2026, 8, 8), [100])
+  delete ambiguous.importSource
+  const history = [chest, back, older, future, unfinished, ambiguous]
+  const week = muscleSetDistribution(history, '1w', now)
+  assert.deepEqual(week.map(({ muscle, sets }) => ({ muscle, sets })), [
+    { muscle: 'chest', sets: 2 },
+    { muscle: 'back', sets: 1 },
+  ])
+  assert.ok(Math.abs(week[0].percentage - 200 / 3) < 0.0001)
+  assert.ok(Math.abs(week[1].percentage - 100 / 3) < 0.0001)
+  assert.deepEqual(muscleSetDistribution(history, '1m', now).map(({ muscle, sets }) => ({ muscle, sets })), [
+    { muscle: 'biceps', sets: 3 },
+    { muscle: 'chest', sets: 2 },
+    { muscle: 'back', sets: 1 },
+  ])
 })
